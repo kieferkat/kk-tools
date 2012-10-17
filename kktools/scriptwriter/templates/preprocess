@@ -1,0 +1,132 @@
+#! /bin/csh
+
+
+######~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+####
+##      Preprocessing script auto-written by Scriptwriter
+##      ${DATE}
+##
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+#      Preprocess loop over subjects:
+#
+
+foreach subject ( ?{SUBJECTS} )
+
+    cd ../${subject}*
+
+	##### rename anatomical scan #####
+
+	if ( -e ?{ANATNAME}+orig.HEAD ) then
+        rm -rf ?{ANATNAME}+orig*
+	endif
+
+	3dcopy ?{ANAT_NIFTI} ?{ANAT_NAME}
+
+
+	##### cut off lead and tail, concatenate active and passive runs #####
+
+	if ( -e epi1+orig.HEAD ) then
+        rm -rf epi?+orig*
+	endif
+    
+    !{3DTCAT_CMD}3dTcat -prefix epi?{EPI_NUM} '?{EPI_NIFTI}[?{LEAD_IN}..?{LEAD_OUT}]'!{CMD_END}
+	
+	
+	##### refitting + slice time correction #####
+	
+    !{3DREFIT_CMD}3drefit -TR ?{TR_LENGTH} epi?{EPI_NUM}+orig!{CMD_END}
+	
+	if ( -e epits1+orig.HEAD ) then
+	  rm -rf epits?+orig*
+	endif
+	
+	!{3DTSHIFT_CMD}3dTshift -slice ?{SLICE_NUM} -tpattern ?{TPATTERN} -prefix epits?{EPI_NUM} epi?{EPI_NUM}+orig.!{CMD_END}
+
+    rm -rf epi?+orig*
+
+	##### pre-clean #####
+	if ( -e parkuse+orig.HEAD ) then
+	  rm -rf parkuse+orig*
+	endif
+
+
+	##### create parkuse concatenated dataset #####
+	3dTcat -prefix parkuse epits1+orig epits2+orig epits3+orig
+
+	rm -rf epits?+orig*
+
+
+	#### correct for motion ####
+
+	if ( -e parkuse_m+orig.HEAD ) then
+	  rm -rf parkuse_m+orig*
+	endif
+
+	if ( -e 3dmotion.1D ) then
+	  rm -rf 3dmotion.1D
+	endif
+
+	3dvolreg -Fourier -twopass -prefix parkuse_m -base 3 -dfile 3dmotion.1D parkuse+orig
+
+
+	##### smooth spatially #####
+
+	if ( -e parkuse_mb+orig.HEAD ) then
+	  rm -rf parkuse_mb+orig*
+	endif
+
+	3dmerge -prefix parkuse_mb -1blur_fwhm 4 -doall parkuse_m+orig
+
+
+	##### normalize (calculate pct signal change / average) and filter ####
+
+	if ( -e parkuse_mbn+orig.BRIK ) then
+	  rm -rf parkuse_mbn+orig.*
+	endif
+
+	if ( -e parkuse_ave+orig.BRIK ) then 
+	  rm -rf parkuse_ave+*
+	endif
+
+
+	3dTstat -prefix parkuse_ave 'parkuse_mb+orig[0..791]'
+	3drefit -abuc parkuse_ave+orig
+	3dcalc -datum float -a 'parkuse_mb+orig[0..791]' -b parkuse_ave+orig -expr "((a-b)/b)*100" -prefix parkuse_mbn
+
+
+	if (-e parkuse_mbnf+orig.HEAD ) then
+	  rm -rf parkuse_mbnf+orig.*
+	endif
+
+	3dFourier -prefix parkuse_mbnf -highpass .011 parkuse_mbn+orig
+
+
+
+	####                                                                  ####
+	########################## talairach warping #############################
+	####                                                                  ####
+
+	##### preclean directory #####
+
+
+	#if (-e anat+tlrc.HEAD ) then
+	#  rm -rf anat+tlrc.*
+	#endif
+	
+	# LINUX VERSION:
+	#@auto_tlrc -warp_orig_vol -suffix NONE -base '/usr/local/afni/bin/TT_N27+tlrc.' -input anat+orig.
+
+	# OSX VERSION:
+	@auto_tlrc -warp_orig_vol -suffix NONE -base '/Users/span/abin/TT_N27+tlrc' -input anat+orig.
+
+	##### set the epi parent to the auto-warped anat #####
+
+	3drefit -apar anat+orig parkuse_mbnf+orig
+
+end
+
+
+
