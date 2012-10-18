@@ -36,13 +36,30 @@ class ScriptWriter(Process):
         return inclusions
         
         
+    def find_variables(self, line):
+        variable_spans = []
+        variables = []
+        while not line.find('?{'):
+            start_ind = line.index('?{')
+            end_ind = line.index('}')
+            variables.append(line[start_ind+1:end_ind].lower())
+            variable_spans.append([start_ind-1,end_ind+1])
+        return variables, variable_spans
+        
+        
     def insert_variables(self, lines, **kwargs):
         if kwargs:
             self._assign_variables(kwargs)
             
         filled = []
         for line in lines:
-            while not line.find('?{'
+            variable_spans = []
+            variables = []
+            while not line.find('?{'):
+                start_ind = line.index('?{')
+                end_ind = line.index('}')
+                variables.append(line[start_ind+1:end_ind].lower())
+                variable_spans.append([start_ind-1,end_ind+1])
         
         
             

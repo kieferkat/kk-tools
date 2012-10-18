@@ -1,6 +1,6 @@
 
 
-
+import functools
 import os
 
 
@@ -40,3 +40,21 @@ class Process(object):
                 print 'ERROR: %s is set to None.' % key
                 proceed = False
         return proceed
+    
+    
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
