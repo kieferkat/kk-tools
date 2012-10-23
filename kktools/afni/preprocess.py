@@ -5,6 +5,7 @@ import shutil
 import glob
 
 from ..base.process import Process
+from ..base.scriptwriter import Scriptwriter
 from ..utilities.cleaners import glob_remove
 from ..defaults.lab_standard import preprocessing as preprocessing_defaults
 
@@ -15,6 +16,7 @@ class Preprocessor(Process):
         super(Preprocessor, self).__init__(variable_dict=variable_dict)
         self._apply_defaults(preprocessing_defaults)
         self.script_name = 'preprocess'
+        self.scriptwriter = Scriptwriter()
         
         
     def _update_dset(self, suffix):
@@ -218,7 +220,7 @@ class Preprocessor(Process):
                      volreg_base=None, suffix='_m'):
         
         header = 'Motion correction:'
-        clean = {'afni':{'dataset':prior_functional+suffix},
+        clean = {'afni':{'dataset':(prior_functional or 'prior_functional')+suffix},
                  'standard':{'motionfile_name':motionfile_name}}
         write_cmd = ['3dvolreg -Fourier -twopass -prefix ${prior_functional}${suffix} -base ${volreg_base} -dfile ${motionfile_name} ${prior_functional}+orig']
         write_vars = {'prior_functional':prior_functional,
@@ -228,7 +230,7 @@ class Preprocessor(Process):
         self.scriptwriter.write_section(header=header, cmd=write_cmd, vars=write_vars,
                                         clean=clean)
         
-        return prior_functional+suffix
+        return (prior_functional or 'prior_functional')+suffix
     
         
         
@@ -256,12 +258,14 @@ class Preprocessor(Process):
     def write_smooth(self, blur_kernel=None, prior_functional=None, suffix='b'):
         
         header = 'Blur dataset:'
-        clean = {'afni':{'dataset':prior_functional+suffix}}
+        clean = {'afni':{'dataset':(prior_functional or 'prior_functional')+suffix}}
         write_cmd = ['3dmerge -prefix ${prior_functional}${suffix} -1blur_fwhm ${blur_kernel} -doall ${prior_functional}+orig']
         write_vars = {'blur_kernel':blur_kernel, 'prior_functional':prior_functional}
         
         self.scriptwriter.write_section(header=header, cmd=write_cmd,
                                         vars=write_vars, clean=clean)
+        
+        return (prior_functional or 'prior_functional')+suffix
         
         
         
@@ -299,8 +303,8 @@ class Preprocessor(Process):
                         ave_suffix='_ave'):
         
         header = 'Normalize dataset:'
-        clean = {'afni':{'dataset':prior_functional+suffix,
-                         'ave_dataset':prior_functional+ave_suffix}}
+        clean = {'afni':{'dataset':(prior_functional or 'prior_functional')+suffix,
+                         'ave_dataset':(prior_functional or 'prior_functional')+ave_suffix}}
         
         tstat_cmd = ['3dTstat -prefix ${prior_functional}${ave_suffix} \'${prior_functional}+orig[0..${functional_trs}]]\'']
         tstat_vars = {'prior_functional':prior_functional,
@@ -322,7 +326,7 @@ class Preprocessor(Process):
         
         self.scriptwriter.write_line(line=calc_cmd, vars=calc_vars)
         
-        return prior_functional+suffix
+        return (prior_functional or 'prior_functional')+suffix
         
         
         
@@ -351,7 +355,7 @@ class Preprocessor(Process):
                               suffix='f'):
         
         header = 'Fourier highpass filter:'
-        clean = {'afni':{'dataset':prior_functional+suffix}}
+        clean = {'afni':{'dataset':(prior_functional or 'prior_functional')+suffix}}
         write_cmd = ['3dFourier -prefix ${prior_functional}${suffix} -highpass ${highpass_value} ${prior_functional}+orig']
         write_vars = {'prior_functional':prior_functional, 'suffix':suffix,
                       'highpass_value':highpass_value}
@@ -359,7 +363,7 @@ class Preprocessor(Process):
         self.scriptwriter.write_section(header=header, clean=clean,
                                         cmd=write_cmd, vars=write_vars)
         
-        return prior_functional+suffix
+        return (prior_functional or 'prior_functional')+suffix
         
         
         
@@ -404,6 +408,19 @@ class Preprocessor(Process):
                       'prior_functional':prior_functional}
         
         self.scriptwriter.write_line(line=refit_cmd, vars=refit_vars)
+        
+        
+    def write_script(self):
+        self.write_convert_anatomical()
+        self.write_cutoff_buffer()
+        self.write_refit()
+        self.write_tshift()
+        self.write_concatenate()
+        self.write_volreg()
+        self.write_smooth()
+        self.write_normalize()
+        self.write_highpass_filter()
+        self.write_talairach_warp()
         
         
     

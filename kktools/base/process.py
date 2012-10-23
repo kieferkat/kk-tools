@@ -2,8 +2,6 @@
 
 import functools
 import os
-from scriptwriter import Scriptwriter
-
 
 
 class Process(object):
@@ -12,7 +10,6 @@ class Process(object):
         super(Process, self).__init__()
         if variable_dict:
             self._instantiate(variable_dict)
-        self.scriptwriter = Scriptwriter()
         
             
     def _instantiate(self, variable_dict):

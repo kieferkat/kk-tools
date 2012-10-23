@@ -15,37 +15,40 @@ class Scriptwriter(object):
         
         
     def add_topheader(self, scriptname='Script'):
-        top = ['#! /bin/csh',
+        top = ['#! /bin/csh\n',
                '######~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##',
                '####',
                '##\t\t'+scriptname+' auto-written by Scriptwriter',
                '##',
                '##',
                '##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##\n\n']
-        self.master.extend(top)
+        return top
         
         
     def add_subject_loop(self, subjects, command_block):
         subject_loop = []
-        subject_loop.append('foreach subject ( '+' '.join(subjects)+' )\n\n')
-        subject_loop.append(['cd ../${subject}*\n\n'])
+        subject_loop.append('foreach subject ( '+' '.join(subjects)+' )\n')
+        subject_loop.append(['cd ../${subject}*\n'])
         subject_loop.append(command_block)
         subject_loop.append('\n\nend\n\n')
+        return subject_loop
         
         
     def add_unset_vars(self):
         varhead = ['##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##',
                    '##\t\tUnset variables:',
-                   '##\n\n']
+                   '##\n']
         for varname in self.unset_variables:
-            varhead.append('set '+varname+' = #INSERT VALUE(S)\n')
-        varhead.append('\n\n')
-        
+            varhead.append('set '+varname+' = #INSERT VALUE(S)')
+        varhead.append('\n')
+        return varhead
+    
         
     def add_header(self, header):
-        head = ['##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##',
+        head = ['\n',
+                '##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##',
                 '##\t\t'+header,
-                '##\n\n']
+                '##\n']
         self.sections.extend(head)    
     
         
@@ -79,9 +82,14 @@ class Scriptwriter(object):
         
     def add_cleaner(self, pieces, check='', find=''):
         for name, item in pieces.items():
-            cleaner = ['if ( -e '+item+check+' ) then',
-                       ['rm -rf '+item+find],
-                       'endif']
+            if item:
+                cleaner = ['if ( -e '+item+check+' ) then',
+                           ['rm -rf '+item+find],
+                           'endif\n']
+            else:
+                cleaner = ['if ( -e ${'+name+'}'+check+' ) then',
+                           ['rm -rf ${'+name+'}'+find],
+                           'endif\n']
             self.sections.extend(cleaner)
             
         
@@ -100,16 +108,29 @@ class Scriptwriter(object):
         if clean: self.add_cleaners(clean)
         if cmd: self.add_cmd(cmd, vars)
         
+    
+    def write_line(self, line=None, vars=None):
+        if line: self.add_cmd(line, vars)
+        
         
     def recursive_flatten(self, container, tabs):
         out = ''
         for item in container:
             if type(item) in (list, tuple):
-                out = out+self.recursive_flatten(item, tabs+1)+'\n'
+                out = out+self.recursive_flatten(item, tabs+1)
             else:
                 out = out+('\t'*tabs)+item+'\n'
         return out
                 
+        
+    def prep_master(self, subject_loop=None):
+        self.master.extend(self.add_topheader())
+        self.master.extend(self.add_unset_vars())
+        if subject_loop:
+            self.master.extend(self.add_subject_loop(subject_loop, self.sections))
+        else:
+            self.master.extend(self.sections)
+            
         
         
     def write_out(self, filename):
