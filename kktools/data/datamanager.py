@@ -289,12 +289,12 @@ class DataManager(Process):
         
         if not downsample_type:
             
-            for subnum, (subject, [trials, responses]) in enumerate(self.subject_design.items()):
-                self.subject_trial_indices[subnum] = []
+            for subject, [trials, responses] in self.subject_design.items():
+                self.subject_trial_indices[subject] = []
                 
                 if not with_replacement:
                     for trial, response in zip(trials, responses):
-                        self.subject_trial_indices[subnum].append(len(self.X))
+                        self.subject_trial_indices[subject].append(len(self.X))
                         self.X.append(trial)
                         self.Y.append(response)
                         
@@ -318,11 +318,11 @@ class DataManager(Process):
                         
                         for i, trial in enumerate(set):
                             if i < upper_length:
-                                self.subject_trial_indices[subnum].append(len(self.X))
+                                self.subject_trial_indices[subject].append(len(self.X))
                                 self.X.append(trial)
                             
                         for rep_trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                            self.subject_trial_indices[subnum].append(len(self.X))
+                            self.subject_trial_indices[subject].append(len(self.X))
                             self.X.append(rep_trial)
                             
                     self.Y.extend([1 for x in range(upper_length)])
@@ -336,25 +336,25 @@ class DataManager(Process):
             positive_trials = []
             negative_trials = []
             
-            for subnum, (subject, [trials, responses]) in enumerate(self.subject_design.items()):
-                self.subject_trial_indices[subnum] = []
+            for subject, [trials, responses] in self.subject_design.items():
+                self.subject_trial_indices[subject] = []
                 
                 for trial, response, in zip(trials, responses):
                     if response > 0:
-                        positive_trials.append([subnum,trial])
+                        positive_trials.append([subject,trial])
                     elif response < 0:
-                        negative_trials.append([subnum,trial])
+                        negative_trials.append([subject,trial])
                         
             random.shuffle(positive_trials)
             random.shuffle(negative_trials)
             
             if not with_replacement:
                 for i in range(min(len(positive_trials), len(negative_trials))):
-                    [psubnum, ptrial] = positive_trials[i]
-                    [nsubnum, ntrial] = negative_trials[i]
-                    self.subject_trial_indices[psubnum].append(len(self.X))
+                    [psub, ptrial] = positive_trials[i]
+                    [nsub, ntrial] = negative_trials[i]
+                    self.subject_trial_indices[psub].append(len(self.X))
                     self.X.append(ptrial)
-                    self.subject_trial_indices[nsubnum].append(len(self.X))
+                    self.subject_trial_indices[nsub].append(len(self.X))
                     self.X.append(ntrial)
                     self.Y.extend([1,-1])
                     
@@ -371,13 +371,13 @@ class DataManager(Process):
                 for set in [positive_trials, negative_trials]:
                     random.shuffle(set)
                     
-                    for i, (subnum, trial) in enumerate(set):
+                    for i, (sub, trial) in enumerate(set):
                         if i < upper_length:
-                            self.subject_trial_indices[subnum].append(len(self.X))
+                            self.subject_trial_indices[sub].append(len(self.X))
                             self.X.append(trial)
                                                 
-                    for subnum, trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                        self.subject_trial_indices[subnum].append(len(self.X))
+                    for sub, trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
+                        self.subject_trial_indices[sub].append(len(self.X))
                         self.X.append(trial)
                         
                 self.Y.extend([1 for x in range(upper_length)])
@@ -390,8 +390,8 @@ class DataManager(Process):
                     
         elif downsample_type == 'subject':
             
-            for subnum, (subject, [trials, responses]) in enumerate(self.subject_design.items()):
-                self.subject_trial_indices[subnum] = []
+            for subject, [trials, responses] in self.subject_design.items():
+                self.subject_trial_indices[subject] = []
                 
                 subject_positives = []
                 subject_negatives = []
@@ -406,14 +406,14 @@ class DataManager(Process):
                 random.shuffle(subject_negatives)
                 
                 if min(len(subject_positives), len(subject_negatives)) == 0:
-                    del self.subject_trial_indices[subnum]
+                    del self.subject_trial_indices[subject]
                     
                 else:
                     if not with_replacement:
                         for i in range(min(len(subject_positives), len(subject_negatives))):
-                            self.subject_trial_indices[subnum].append(len(self.X))
+                            self.subject_trial_indices[subject].append(len(self.X))
                             self.X.append(subject_positives[i])
-                            self.subject_trial_indices[subnum].append(len(self.X))
+                            self.subject_trial_indices[subject].append(len(self.X))
                             self.X.append(subject_negatives[i])
                             self.Y.extend([1,-1])
                             
@@ -428,14 +428,14 @@ class DataManager(Process):
                             
                             for i, trial in enumerate(set):
                                 if i < upper_length:
-                                    self.subject_trial_indices[subnum].append(len(self.X))
+                                    self.subject_trial_indices[subject].append(len(self.X))
                                     self.X.append(trial)
                                 
                             print upper_length
                             print len(set)
                                 
                             for trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                                self.subject_trial_indices[subnum].append(len(self.X))
+                                self.subject_trial_indices[subject].append(len(self.X))
                                 self.X.append(trial)
                                 
                         self.Y.extend([1 for x in range(upper_length)])
