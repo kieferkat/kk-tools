@@ -29,6 +29,10 @@ class CVObject(Process):
         return [replace(v) for v in Y]
         
         
+    def replace_Y_negative_ones(self):
+        self.Y = self.replace_Y_vals(self.Y, -1., 0.)
+        
+        
     def prepare_folds(self, indices_dict=None, folds=None, leave_mod_in=False):
         # indices dict must be a python dictionary with keys corresponding to
         # some kind of grouping (typically keys for subjects/brains).

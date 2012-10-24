@@ -1,0 +1,14 @@
+import numpy, os
+import commands
+
+# -----------------
+# LOCAL ENVIRONMENT
+# ----------------
+Import('env')
+cwpath_env = env.Clone()
+
+cwpath_env.PythonExtension('cwpath', ['./cwpath.pyx'])
+cwpath_env.PythonExtension('graphnet', ['./graphnet.pyx'])
+cwpath_env.PythonExtension('regression', ['./regression.pyx'])
+
+

@@ -21,23 +21,11 @@ class ScikitsSVM(CVobject):
         self.set_folds(folds)
         self.nifti = NiftiTools()
         
-        if getattr(self.data, 'X', None):
-            self.X = self.data.X
-        else:
-            self.X = None
-        if getattr(self.data, 'Y', None):
-            self.Y = self.data.Y
-            self.replace_negative_Y()
-        else:
-            self.Y = None
-        if getattr(self.data, 'subject_trial_indices', None):
-            self.indices_dict = self.data.subject_trial_indices
-        else:
-            self.indices_dict = None
-        
-        
-    def replace_negative_Y(self):
-        self.Y = self.replace_Y_vals(self.Y, -1., 0.)
+        self.X = getattr(self.data, 'X', None)
+        self.Y = getattr(self.data, 'Y', None)
+        if self.Y:
+            self.replace_Y_negative_ones()
+        self.indices_dict = getattr(self.data, 'subject_trial_indices', None)
         
             
     def fit_svc(self, X, Y, cache_size=5000, class_weight='auto'):
