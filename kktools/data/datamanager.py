@@ -102,20 +102,25 @@ class DataManager(Process):
         
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return None
-        
-        if not self.nifti_name.endswith('.nii'):
-            self.nifti_name = self.nifti_name+'.nii'
             
         self.subject_data_dict = {}
             
         # iterate through niftis
         for subject in self.subject_dirs:
             
-            if type(nifti_name) in (list, tuple) and type(response_vector) in (list, tuple):
-                for nifti, respvec in zip(nifti_name, response_vector):
+            if type(self.nifti_name) in (list, tuple) and type(self.response_vector) in (list, tuple):
+                for nifti, respvec in zip(self.nifti_name, self.response_vector):
+                    
+                    if not nifti.endswith('.nii'):
+                        nifti = nifti+'.nii'
+                    
                     self.nifti_adder(subject, nifti, respvec)
                     
             else:
+                
+                if not self.nifti_name.endswith('.nii'):
+                    nifti_name = self.nifti_name+'.nii'
+                    
                 self.nifti_adder(subject, nifti_name, response_vector)
             
             
@@ -152,10 +157,10 @@ class DataManager(Process):
             print 'appending raw data for subject: ', subject_key
             
             if not subject_key in self.subject_data_dict:
-                self.subject_data_dict[subject_key] = [np.array(idata), respvec]
+                self.subject_data_dict[subject_key] = [[np.array(idata)], [respvec]]
             else:
-                self.subject_data_dict[subject_key][0] = np.append(self.subject_data_dict[subject_key][0], np.array(idata))
-                self.subject_data_dict[subject_key][1] = np.append(self.subject_data_dict[subject_key][1], respvec)
+                self.subject_data_dict[subject_key][0].append(np.array(idata))
+                self.subject_data_dict[subject_key][1].append(respvec)
     
     
     
@@ -167,7 +172,8 @@ class DataManager(Process):
         
     
     
-    def subselect_data(self, selected_trs=None, trial_mask=None, lag=None, delete_data_dict=True):
+    def subselect_data(self, selected_trs=None, trial_mask=None, lag=None, delete_data_dict=True,
+                       verbose=True):
         
         required_vars = {'selected_trs':selected_trs, 'trial_mask':trial_mask,
                          'lag':lag}
@@ -179,13 +185,14 @@ class DataManager(Process):
         self.subject_design = {}
         
         print 'lag: ', self.lag
+        print 'experiment trs', self.experiment_trs
         
         #for subject, [nifti_data, resp_vec] in self.subject_data_dict.items():
         
-        for subject, niftis_respvecs in self.subject_data_dict.items():
-            
-            for [nifti_data, respvec] in niftis_respvecs:
-            
+        for subject, [nifti_datas, resp_vecs] in self.subject_data_dict.items():
+                        
+            for nifti_data, resp_vec in zip(nifti_datas, resp_vecs):
+                
                 print 'Subselecting and masking trials for: ', subject
                 
                 onsetindices = np.nonzero(resp_vec)[0]
@@ -197,13 +204,24 @@ class DataManager(Process):
                     if trs[-1] < self.experiment_trs-1:
                         raw_trial = nifti_data[:,:,:,trs]
                         trials.append(raw_trial[self.trial_mask])
+                    else:
+                        if verbose:
+                            print 'left trial out', ind
+                        responses = responses[0:i]
                 
                 if not subject in self.subject_design:
-                    self.subject_design[subject] = [np.array(trials), responses]
+                    self.subject_design[subject] = [trials, responses]
                     
                 else:
-                    self.subject_design[subject][0] = np.append(self.subject_design[subject][0], np.array(trials))
+                    self.subject_design[subject][0].extend(trials)
                     self.subject_design[subject][1] = np.append(self.subject_design[subject][1], responses)
+                
+            self.subject_design[subject][0] = np.array(self.subject_design[subject][0])
+            
+            if verbose:
+                print len(self.subject_design[subject][0])
+                print len(self.subject_design[subject][1])
+            
                 
             if delete_data_dict:
                 print 'Deleting data_dict entry for: ', subject
@@ -263,6 +281,8 @@ class DataManager(Process):
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return False
         
+        self.prediction_tr_length = getattr(self, 'prediction_tr_length', None) or len(self.selected_trs)
+        
         if suffix is None:
             try:
                 suffix = '_lag'+str(self.lag)+'_trs'+str(self.prediction_tr_length)
@@ -275,13 +295,16 @@ class DataManager(Process):
             
             print 'Loading numpy trials and responses for subject: ', subject
             
-            trial_file = os.path.join(self.save_directory, subject+'_trials'+suffix+'.npy')
-            resp_file = os.path.join(self.save_directory, subject+'_respvec'+suffix+'.npy')
-        
-            trials = np.load(trial_file)
-            responses = np.load(resp_file)
+            try:
+                trial_file = os.path.join(self.save_directory, subject+'_trials'+suffix+'.npy')
+                resp_file = os.path.join(self.save_directory, subject+'_respvec'+suffix+'.npy')
             
-            self.subject_design[subject] = [trials, responses]
+                trials = np.load(trial_file)
+                responses = np.load(resp_file)
+                
+                self.subject_design[subject] = [trials, responses]
+            except:
+                print 'there was an error trying to load data & responses for subject: ', subject
             
         affine_file = os.path.join(self.save_directory, 'raw_affine'+suffix+'.npy')
         

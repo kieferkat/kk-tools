@@ -35,6 +35,12 @@ def replace(vector, oldvalue, newvalue):
     return [x if not x == oldvalue else newvalue for x in vector]
     
     
+    
+def replace_at_interval(vector, newvalue, interval, start=0):
+    rewrite_inds = [x-1 for x in range(start, len(vector)+1, interval)]
+    return [newvalue if (i in rewrite_inds) else x for i,x in enumerate(vector)]
+    
+    
 # simply call stephanie's old makeVec.py for now.
 # eventually create a new makevec class because stephanie's is limited...
 def makevecs(dirs, vector_model_path):

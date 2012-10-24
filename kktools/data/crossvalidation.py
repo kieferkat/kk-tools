@@ -24,7 +24,7 @@ class CVObject(Process):
         self.crossvalidator.folds = folds
         
         
-    def convert_Y_vals(self, Y, original_val, new_val):
+    def replace_Y_vals(self, Y, original_val, new_val):
         replace = lambda val: new_val if (val==original_val) else val
         return [replace(v) for v in Y]
         
