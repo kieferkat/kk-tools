@@ -32,7 +32,7 @@ class GraphnetInterface(CVObject):
 
 
     def __init__(self, data_obj=None, variable_dict=None, folds=None):
-        super(CVObject, self).__init__(variable_dict=variable_dict, data_obj=data_obj)
+        super(GraphnetInterface, self).__init__(variable_dict=variable_dict, data_obj=data_obj)
         self.set_folds(folds)
         self.niftitools = NiftiTools()
         

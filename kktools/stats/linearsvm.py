@@ -14,7 +14,7 @@ from threshold import threshold_by_pvalue, threshold_by_rawrange
 
 
 
-class ScikitsSVM(CVobject):
+class ScikitsSVM(CVObject):
     
     def __init__(self, data_obj=None, variable_dict=None, folds=None):
         super(CVObject, self).__init__(variable_dict=variable_dict, data_obj=data_obj)

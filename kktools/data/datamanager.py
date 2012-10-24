@@ -111,35 +111,53 @@ class DataManager(Process):
         # iterate through niftis
         for subject in self.subject_dirs:
             
-            nifti = os.path.join(subject, self.nifti_name)
-            vector = os.path.join(subject, self.response_vector)
-            
-            if not os.path.exists(nifti):
-                print 'NOT FOUND: ', nifti
-            elif not os.path.exists(vector):
-                print 'NOT FOUND: ', vector
-            else:
-                
-                respvec = self.parse_vector(vector)
-                
-                pprint(nifti)
-                idata, affine, ishape = self.nifti.load_nifti(nifti)    
-                
-                if getattr(self, 'raw_affine', None) is None:
-                    pprint(affine)
-                    self.raw_affine = affine
-                
-                if getattr(self, 'raw_data_shape', None) is None:
-                    pprint(ishape)
-                    self.raw_data_shape = ishape
+            if type(nifti_name) in (list, tuple) and type(response_vector) in (list, tuple):
+                for nifti, respvec in zip(nifti_name, response_vector):
+                    self.nifti_adder(subject, nifti, respvec)
                     
-                if getattr(self, 'experiment_trs', None) is None:
-                    print 'experiment trs: ', ishape[3]
-                    self.experiment_trs = ishape[3]
-                                        
-                print 'appending raw data for subject: ', os.path.split(subject)[1]
-                self.subject_data_dict[os.path.split(subject)[1]] = [np.array(idata), respvec]
-                           
+            else:
+                self.nifti_adder(subject, nifti_name, response_vector)
+            
+            
+                
+    
+    def nifti_adder(self, dir, nifti, vector, suffix=''):
+        
+        nifti = os.path.join(dir, nifti)
+        vec = os.path.join(dir, vector)
+        
+        if not os.path.exists(nifti):
+            print 'not found: ', nifti
+        elif not os.path.exists(vec):
+            print 'not found: ', vec
+        else:
+            
+            respvec = self.parse_vector(vec)
+            pprint(nifti)
+            idata, affine, ishape = self.nifti.load_nifti(nifti)
+            
+            if getattr(self, 'raw_affine', None) is None:
+                pprint(affine)
+                self.raw_affine = affine
+                
+            if getattr(self, 'raw_data_shape', None) is None:
+                pprint(ishape)
+                self.raw_data_shape = ishape
+                
+            if getattr(self, 'experiment_trs', None) is None:
+                print 'experiment trs: ', ishape[3]
+                self.experiment_trs = ishape[3]
+                
+            subject_key = os.path.split(dir)[1]+suffix
+            print 'appending raw data for subject: ', subject_key
+            
+            if not subject_key in self.subject_data_dict:
+                self.subject_data_dict[subject_key] = [np.array(idata), respvec]
+            else:
+                self.subject_data_dict[subject_key][0] = np.append(self.subject_data_dict[subject_key][0], np.array(idata))
+                self.subject_data_dict[subject_key][1] = np.append(self.subject_data_dict[subject_key][1], respvec)
+    
+    
     
     
     def free_nifti_data(self):
@@ -162,22 +180,31 @@ class DataManager(Process):
         
         print 'lag: ', self.lag
         
-        for subject, [nifti_data, resp_vec] in self.subject_data_dict.items():
+        #for subject, [nifti_data, resp_vec] in self.subject_data_dict.items():
+        
+        for subject, niftis_respvecs in self.subject_data_dict.items():
             
-            print 'Subselecting and masking trials for: ', subject
+            for [nifti_data, respvec] in niftis_respvecs:
             
-            onsetindices = np.nonzero(resp_vec)[0]
-            responses = resp_vec[onsetindices]
-            trials = []
-            
-            for i, ind in enumerate(onsetindices):
-                trs = [ind+tr+self.lag for tr in justified_trs]
-                if trs[-1] < self.experiment_trs-1:
-                    raw_trial = nifti_data[:,:,:,trs]
-                    trials.append(raw_trial[self.trial_mask])
+                print 'Subselecting and masking trials for: ', subject
+                
+                onsetindices = np.nonzero(resp_vec)[0]
+                responses = resp_vec[onsetindices]
+                trials = []
+                
+                for i, ind in enumerate(onsetindices):
+                    trs = [ind+tr+self.lag for tr in justified_trs]
+                    if trs[-1] < self.experiment_trs-1:
+                        raw_trial = nifti_data[:,:,:,trs]
+                        trials.append(raw_trial[self.trial_mask])
+                
+                if not subject in self.subject_design:
+                    self.subject_design[subject] = [np.array(trials), responses]
                     
-            self.subject_design[subject] = [np.array(trials), responses]
-            
+                else:
+                    self.subject_design[subject][0] = np.append(self.subject_design[subject][0], np.array(trials))
+                    self.subject_design[subject][1] = np.append(self.subject_design[subject][1], responses)
+                
             if delete_data_dict:
                 print 'Deleting data_dict entry for: ', subject
                 # free some memory:
