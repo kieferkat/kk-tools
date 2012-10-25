@@ -12,7 +12,94 @@ import nibabel as nib
 from ..base.process import Process
 from ..data.nifti import NiftiTools
 from ..utilities.cleaners import glob_remove
+from ..utilities.csv import CsvTools
+from ..afni.functions import FractionizeMask, MaskAve, MaskDump
+from ..utilities.vector import read as vecread
 
+
+
+class LogisticData(Process):
+    
+    def __init__(self, variable_dict=None):
+        super(LogisticData, self).__init__(variable_dict=variable_dict)
+        self.csv = CsvTools()
+        self.maskdump = MaskDump()
+        
+        
+    def load_behavioral_csv(self, csv_path, header=True, delimiter=',', newline='\n'):
+        return self.csv.read(csv_path)
+        
+        
+    def load_subject_csvs(self, subject_dirs=None, subject_csv_name=None):
+        
+        required_vars = {'subject_dirs':subject_dirs, 'behavior_csv_name':behavior_csv_name}
+        self._assign_variables(required_vars)
+        if not self._check_variables(requried_vars): return False
+        
+        self.subject_csv_dict = {}
+        
+        for dir in self.subject_dirs:
+            
+            subject_name = os.path.split(dir)[1]
+            subject_csv_path = os.path.join(dir, self.behavior_csv_name)
+            
+            self.subject_csv_dict[subject_name] = self.load_behavioral_csv(subject_csv_path)
+            
+            
+            
+    def maskdump(self, subject_dirs=None, functional_name=None, anatomical_name=None,
+                 mask_names=None, mask_dir=None, mask_area_strs=['l','r','b'],
+                 mask_area_codes=[[1,1],[2,2],[1,2]]):
+        
+        required_vars = {'subject_dirs':subject_dirs, 'functional_name':functional_name,
+                         'anatomical_name':anatmocial_name, 'mask_names':mask_names,
+                         'mask_dir':mask_dir}
+        self._assign_variables(required_vars)
+        if not self._check_variables(requried_vars): return False
+            
+        mask_paths = [os.path.join(self.mask_dir, name) for name in self.mask_names]
+        
+        self.maskdump.run_over_subjects(self.subject_dirs, self.functional_name,
+                                        self.anatomical_name, mask_paths,
+                                        mask_area_strs=mask_area_strs,
+                                        mask_area_codes=mask_area_codes)
+        
+    
+    
+    def load_subject_raw_tcs(self, subject_dirs=None, tmp_tc_dir='raw_tc'):
+        
+        required_vars = {'subject_dirs':subject_dirs}
+        self._assign_variables(required_vars)
+        if not self._check_variables(requried_vars): return False
+        
+        self.subject_rawtc_dict = {}
+        
+        for dir in self.subject_dirs:
+            rawdir = os.path.join(dir, tmp_tc_dir)
+            raw_tcs = glob.glob(os.path.join(rawdir,'*.tc'))
+            
+            for tcfile in raw_tcs:
+                subject_name, area, mask_name = os.path.split(tcfile)[1].split('_')[0:3]
+                rl = vecread(tcfile, float=True)
+                
+                if subject_name not in self.subject_rawtc_dict:
+                    self.subject_rawtc_dict[subject_name] = {mask_name:{area:rl}}
+                else:
+                    if mask_name not in self.subject_rawtc_dict[subject_name]:
+                        self.subject_rawtc_dict[subject_name][mask_name] = {area:rl}
+                    else:
+                        self.subject_rawtc_dict[subject_name][mask_name][area] = rl
+                        
+    
+    def make_logistic_csv(self):
+        
+        pass
+                        
+                
+    
+    
+    
+    
 
 
 

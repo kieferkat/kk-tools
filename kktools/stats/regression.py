@@ -2,6 +2,37 @@
 import pylab, pandas
 import statsmodels.api
 import numpy as np
+from ..data.crossvalidation import CVObject
+from ..utilities.csv import CsvTools
+
+
+
+
+class Regression(CVobject):
+    
+    
+    def __init__(self, data_obj=None, variable_dict=None, folds=None):
+        super(Regression, self).__init__(variable_dict=variable_dict, data_obj=data_obj)
+        self.set_folds(folds)
+        
+        self.X = getattr(self.data, 'X', None)
+        self.Y = getattr(self.data, 'Y', None)
+        
+        if self.Y:
+            self.replace_Y_negative_ones()
+            
+        self.indices_dict = getattr(self.data, 'subject_trial_indices', None)
+    
+    
+
+
+
+class LogisticRegression(Regression):
+    
+    
+    def __init__(self, data_obj=None, variable_dict=None, folds=None):
+        super(LogisticRegression, self).__init__(variable_dict=variable_dict,
+                                                 data_obj=data_obj, folds=folds)
 
 
 

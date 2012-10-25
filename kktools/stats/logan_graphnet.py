@@ -18,7 +18,7 @@ from optimization.cwpath.cwpath import inner1d
 from optimization.graphs.graph_laplacian import construct_adjacency_list
 # NEED TO ADD CYTHON & GRAPHS IMPORTS
 
-path_to_graphnetC_packages = os.path.abspath('../../../neuroparser/optimization/cwpath/.')
+path_to_graphnetC_packages = os.path.abspath('/Users/span/kk_scripts/neuroparser/optimization/cwpath/.')
 sys.path.append(path_to_graphnetC_packages)
 import graphnet
 

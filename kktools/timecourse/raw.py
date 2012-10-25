@@ -4,10 +4,12 @@ import subprocess
 import shutil
 import glob
 from ..base.process import Process
+from ..base.afni.functions import MaskAve, FractionizeMask, MaskDump
 from ..utilities.cleaners import glob_remove
 from ..utilities.csv import CsvTools
 from ..utilities.vector import read as vecread
 from ..utilities.vector import write as vecwrite
+from ..utilities.vector import makevecs
 
 
 
@@ -16,6 +18,7 @@ class RawTimecourse(Process):
     def __init__(self, variable_dict=None):
         super(RawTimecourse, self).__init__(variable_dict=variable_dict)
         self.csv = CsvTools()
+        self.maskdump = MaskDump()
         
     
     def make_vectors(self, vector_model_path=None, subject_dirs=None):
@@ -25,97 +28,26 @@ class RawTimecourse(Process):
         if not self._check_variables(required_vars): return False
         
         makevecs(self.subject_dirs, self.vector_model_path)
+            
+            
+            
+    def mask_dump(self, subject_dirs=None, timecourse_functional=None,
+                  anatomical_name=None, mask_paths=None, mask_area_strs=['l','r','b'],
+                  mask_area_codes=[[1,1],[2,2],[1,2]], verbose=True):
         
-    
-    
-    def fractionize_mask(self, subject_dir, mask_path, mask_name, timecourse_functional=None,
-                         anatomical_name=None, verbose=True):
-        required_vars = {'timecourse_functional':timecourse_functional,
-                         'anatomical_name':anatomical_name}
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return False
-        
-        subj_anatomical = os.path.join(subject_dir, self.anatomical_name)
-        subj_functional = os.path.join(subject_dir, self.timecourse_functional)
-        subj_mask = os.path.join(subject_dir, mask_name+'r')
-        
-        if verbose:
-            print 'Fractionizing ', os.path.split(mask_path)[1]
-            
-        
-        # attempt removal of old fractionized masks
-        glob_remove(subj_mask, suffix='+orig*')
-        
-        #fractionize the mask to specified functional:
-        cmd = ['3dfractionize', '-template', subj_functional, '-input', mask_path,
-               '-warp', subj_anatomical, '-clip', '0.1', '-preserve', '-prefix',
-               subj_mask]
-        subprocess.call(cmd)
-        
-        
-    def mask_average(self, subject_dir, subject_name, mask_name, timecourse_functional=None,
-                     mask_areas=None, mask_area_codes=None, tmp_tc_dirname='raw_tcs/',
-                     verbose=True):
-        
-        required_vars = {'timecourse_functional':timecourse_functional,
-                         'mask_areas':mask_areas, 'mask_area_codes':mask_area_codes}
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return False
-        
-        if verbose:
-            print 'maskave for ', subject_name, mask_name
-            
-        subj_temp_dir = os.path.join(subject_dir, tmp_tc_dirname)
-        if not os.path.exists(subj_temp_dir):
-            os.makedirs(subj_temp_dir)
-            
-        subj_mask = os.path.join(subject_dir, mask_name+'r+orig')
-        subj_functional = os.path.join(subject_dir, self.timecourse_functional)
-            
-        # iterate over areas, codes and complete mask averaging:
-        for area, codes in zip(self.mask_areas, self.mask_area_codes):
-            
-            # define the name of the raw tc file"
-            raw_tc = os.path.join(subj_temp_dir, '_'.join([subject_name, area, mask_name, 'raw.tc']))
-            
-            # attempt removal of already existing file:
-            glob_remove(raw_tc)
-            
-            # prepare maskave command:
-            cmd = ['3dmaskave', '-mask', subj_mask, '-quiet', '-mrange',
-                   str(codes[0]), str(codes[1]), subj_functional]
-            
-            fcontent = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-            fcontent.wait()
-            fcontent = fcontent.communicate()[0]
-            
-            fid = open(raw_tc,'w')
-            fid.write(fcontent)
-            fid.close()
-            
-            
-            
-    def mask_dump(self, subject_dirs=None, subjects=None, timecourse_functional=None,
-                  anatomical_name=None, mask_paths=None, mask_names=None,
-                  mask_areas=None, mask_area_codes=None, verbose=True):
-        
-        required_vars = {'subject_dirs':subject_dirs, 'subjects':subjects,
+        required_vars = {'subject_dirs':subject_dirs,
                          'timecourse_functional':timecourse_functional,
                          'anatomical_name':anatomical_name, 'mask_paths':mask_paths,
-                         'mask_names':mask_names, 'mask_areas':mask_areas,
+                         'mask_names':mask_names, 'mask_area_strs':mask_areas,
                          'mask_area_codes':mask_area_codes}
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return False
         
-        for subjdir, subject in zip(self.subject_dirs, self.subjects):
-            
-            # iterate over masks:
-            for mask_path, mask_name in zip(self.mask_paths, self.mask_names):
-                # fractionize the masks:
-                self.fractionize_mask(subjdir, mask_path, mask_name)
+        self.maskdump.run_over_subjects(self.subject_dirs, self.timecourse_functional,
+                                        self.anatomical_name, self.mask_paths,
+                                        mask_area_strs=mask_area_strs,
+                                        mask_area_codes=mask_area_codes)
                 
-                # create raw timecourses:
-                self.mask_average(subjdir, subject, mask_name)
                 
                 
     def parse_tc_file(self, filepath):
@@ -132,14 +64,16 @@ class RawTimecourse(Process):
         
             
     def average_activation(self, timecourse_ouput_dir=None, subject_dirs=None,
-                           onset_vectors=None, timecourse_lag=None, tmp_tc_dirname='raw_tcs/',
-                           verbose=True):
+                           onset_vectors=None, timecourse_tr_range=None,
+                           tmp_tc_dirname='raw_tcs/', verbose=True):
         
         required_vars = {'timecourse_ouput_dir':timecourse_output_dir,
                          'subject_dirs':subject_dirs, 'onset_vectors':onset_vectors,
-                         'timecourse_lag':timecourse_lag}
+                         'timecourse_tr_range':timecourse_tr_range}
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return False
+        
+        # prefer timecourse TR range to timecourse lag:
         
         if verbose:
             print 'preparing to average activation...'
@@ -181,12 +115,13 @@ class RawTimecourse(Process):
         self.create_timecourse_csvs(tc_dict, onset_dict)
         
         
+        
     def create_timecourse_csvs(self, tc_dict, onset_dict, timecourse_output_dir=None,
-                               timecourse_lag=None, onset_vectors=None, verbose=True):
+                               timecourse_tr_range=None, onset_vectors=None, verbose=True):
         
         required_vars = {'timecourse_ouput_dir':timecourse_output_dir,
                          'onset_vectors':onset_vectors,
-                         'timecourse_lag':timecourse_lag}
+                         'timecourse_tr_range':timecourse_tr_range}
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return False
         
@@ -226,9 +161,9 @@ class RawTimecourse(Process):
                         # accumulator where appropriate:
                         for i, ind in enumerate(nvec):
                             if ind == 1:
-                                for j,k in zip(range(i,i+self.timecourse_lag), range(self.timecourse_lag)):
-                                    if len(act) > j:
-                                        accumulator[k].append(act[j])
+                                for trind, aind, in zip(self.timecourse_tr_range, range(len(self.timecourse_tr_range))):
+                                    if len(act) > i+trind:
+                                        accumulator[aind].append(act[i+trind])
                                         
                         # average the accumulator:
                         for i, actlist in enumerate(accumulator):
@@ -245,23 +180,35 @@ class RawTimecourse(Process):
                     self.csv.append_row_stderr(csv_path)
                     
                     
-    def run(self, vector_model_path=None, subject_dirs=None, subjects=None,
-            timecourse_functional=None, anatomical_name=None, mask_areas=None,
-            mask_area_codes=None, mask_paths=None, mask_names=None,
-            onset_vectors=None, timecourse_lag=None, timecourse_output_dir=None,
+                    
+    def run(self, vector_model_path=None, subject_dirs=None,
+            timecourse_functional=None, anatomical_name=None, mask_area_strs=None,
+            mask_area_codes=None, mask_names=None, mask_paths=None, onset_vectors=None,
+            timecourse_tr_range=None, timecourse_output_dir=None,
             scripts_dir=None):
         
         required_vars = {'subject_dirs':subject_dirs, 'scripts_dir':scripts_dir,
                          'timecourse_functional':timecourse_functional,
                          'anatomical_name':anatomical_name, 'mask_areas':mask_areas,
                          'mask_area_codes':mask_area_codes,'mask_names':mask_names,
-                         'onset_vectors':onset_vectors,'timecourse_lag':timecourse_lag}
+                         'onset_vectors':onset_vectors,'timecourse_tr_range':timecourse_tr_range}
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return False
         
         self.subjects = subjects or [os.path.split(s)[1] for s in self.subject_dirs]
         self.mask_paths = mask_paths or [os.path.join(self.scripts_dir,m+'+tlrc') for m in self.mask_names]
         self.timecourse_output_dir = timecourse_output_dir or os.path.join(os.path.split(self.scripts_dir)[0], 'raw_timecourses')
+        
+        # assume timecourse range starts with 1, not 0...
+        
+        if type(self.timecourse_tr_range) is int:
+            self.timecourse_tr_range = range(self.timecourse_tr_range)
+        elif type(self.timecourse_tr_range) in (list, tuple):
+            self.timecourse_tr_range = [x-1 for x in self.timecourse_tr_range]
+        else:
+            print 'timecourse tr range of incorrect type (should be int or list/tuple)'
+            return False
+
         
         if getattr(self, 'vector_model_path', None):
             self.make_vectors()

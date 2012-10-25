@@ -3,9 +3,11 @@ import glob
 import os
 import math
 import sys
+import pylab
 import numpy as np
 import scipy.stats as stats
 import sys
+import pylab
 
 # yeah, i do know there is a csv module. who cares?
 
@@ -25,12 +27,17 @@ class CsvTools(object):
         super(CsvTools, self).__init__()
         
     
+    def import_as_recarray(self, csv):
+        return pylab.csv2rec(csv)
+        
+    
     def read(self, csv, delimiter=',', newline='\n'):
         fid = open(csv,'r')
         lines = fid.readlines()
         fid.close()
         lines = [l.strip(newline).split(delimiter) for l in lines]
         return lines
+    
     
     def write(self, lines, filename, delimiter=',', newline='\n'):
         fid = open(filename,'w')
@@ -42,8 +49,10 @@ class CsvTools(object):
     def tofloat(self, matrix):
         return [[float(y) for y in x] for x in matrix]
         
+        
     def tostring(self, matrix):
         return [[str(y) for y in x] for x in matrix]
+        
     
     def transpose(self, matrix):
         return [[row[col] for row in matrix] for col in range(np.shape(matrix)[1])]
