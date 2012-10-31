@@ -462,8 +462,8 @@ class DataManager(Process):
                             self.subject_trial_indices[subject].append(len(self.X))
                             self.X.append(rep_trial)
                             
-                    self.Y.extend([1 for x in range(upper_length)])
-                    self.Y.extend([-1 for x in range(upper_length)])
+                    self.Y.extend([1. for x in range(upper_length)])
+                    self.Y.extend([-1. for x in range(upper_length)])
         
                 if verbose:
                     self._xy_matrix_tracker()
@@ -493,7 +493,7 @@ class DataManager(Process):
                     self.X.append(ptrial)
                     self.subject_trial_indices[nsub].append(len(self.X))
                     self.X.append(ntrial)
-                    self.Y.extend([1,-1])
+                    self.Y.extend([1.,-1.])
                     
                 if verbose:
                     self._xy_matrix_tracker()
@@ -517,8 +517,8 @@ class DataManager(Process):
                         self.subject_trial_indices[sub].append(len(self.X))
                         self.X.append(trial)
                         
-                self.Y.extend([1 for x in range(upper_length)])
-                self.Y.extend([-1 for x in range(upper_length)])
+                self.Y.extend([1. for x in range(upper_length)])
+                self.Y.extend([-1. for x in range(upper_length)])
                 
                 if verbose:
                     self._xy_matrix_tracker()
@@ -552,7 +552,7 @@ class DataManager(Process):
                             self.X.append(subject_positives[i])
                             self.subject_trial_indices[subject].append(len(self.X))
                             self.X.append(subject_negatives[i])
-                            self.Y.extend([1,-1])
+                            self.Y.extend([1.,-1.])
                             
                     elif with_replacement:
                         if not replacement_ceiling:
@@ -575,11 +575,14 @@ class DataManager(Process):
                                 self.subject_trial_indices[subject].append(len(self.X))
                                 self.X.append(trial)
                                 
-                        self.Y.extend([1 for x in range(upper_length)])
-                        self.Y.extend([-1 for x in range(upper_length)])
+                        self.Y.extend([1. for x in range(upper_length)])
+                        self.Y.extend([-1. for x in range(upper_length)])
                         
                 if verbose:
                     self._xy_matrix_tracker()
+                    
+        self.X = np.array(self.X)
+        self.Y = np.array(self.Y)
                     
             
 

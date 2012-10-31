@@ -26,7 +26,7 @@ class CVObject(Process):
         
     def replace_Y_vals(self, Y, original_val, new_val):
         replace = lambda val: new_val if (val==original_val) else val
-        return [replace(v) for v in Y]
+        return np.array([replace(v) for v in Y])
         
         
     def replace_Y_negative_ones(self):

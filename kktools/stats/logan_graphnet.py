@@ -38,7 +38,7 @@ class GraphnetInterface(CVObject):
         
         self.X = getattr(self.data, 'X', None)
         self.Y = getattr(self.data, 'Y', None)
-        if self.Y:
+        if not self.Y is None:
             self.replace_Y_negative_ones()
         self.indices_dict = getattr(self.data, 'subject_trial_indices', None)
         
@@ -78,6 +78,7 @@ class GraphnetInterface(CVObject):
     
     
     def gen_adj(self, p):
+        print 'generating adjacency matrix'
         Afull = np.zeros((p, p), dtype=int)
         A = -np.ones((p, p), dtype=int)
         counts = np.zeros(p)
@@ -87,7 +88,8 @@ class GraphnetInterface(CVObject):
                     if i != j:
                         if Afull[i,j] == 0:
                             Afull[i,j] = -1
-                            Afull[j,i] += 1
+                            Afull[j,i] = -1
+                            Afull[i,i] += 1
                             Afull[j,j] += 1
                             A[i, counts[i]] = j
                             A[j, counts[j]] = i
@@ -123,9 +125,10 @@ class GraphnetInterface(CVObject):
         
         if problemkey in ('HuberSVMGraphNet', 'RobustGraphNet', 'NaiveGraphNet'):
             if G is None:
-                nx = 60
-                ny = 60
-                A, Afull = construct_adjacency_list(nx, ny, 1, return_full=True)
+                #nx = 60
+                #ny = 60
+                #A, Afull = construct_adjacency_list(nx, ny, 1, return_full=True)
+                A, Afull = self.gen_adj(X.shape[1])
             else:
                 A = G.copy()
         

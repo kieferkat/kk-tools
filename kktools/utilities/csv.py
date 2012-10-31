@@ -86,7 +86,7 @@ class CsvTools(object):
     def stderr_rows(self, X):
         return stats.sem(X, axis=1)
         
-    @numpy_decorator
+    @numpy_converter
     def stderr_cols(self, X):
         return stats.sem(X, axis=0)
         
