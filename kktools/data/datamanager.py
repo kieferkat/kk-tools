@@ -24,6 +24,7 @@ class LogisticData(Process):
         super(LogisticData, self).__init__(variable_dict=variable_dict)
         self.csv = CsvTools()
         self.maskdump = MaskDump()
+        self.logistic_data_dict = {}
         
         
     def load_behavioral_csv(self, csv_path, header=True, delimiter=',', newline='\n'):
@@ -35,15 +36,24 @@ class LogisticData(Process):
         required_vars = {'subject_dirs':subject_dirs, 'behavior_csv_name':behavior_csv_name}
         self._assign_variables(required_vars)
         if not self._check_variables(requried_vars): return False
-        
-        self.subject_csv_dict = {}
-        
+                
         for dir in self.subject_dirs:
             
             subject_name = os.path.split(dir)[1]
             subject_csv_path = os.path.join(dir, self.behavior_csv_name)
             
-            self.subject_csv_dict[subject_name] = self.load_behavioral_csv(subject_csv_path)
+            if not subject_name in self.logistic_data_dict:
+                self.logistic_data_dict[subject_name] = {}
+            
+            csv_aslist = self.load_behavioral_csv(subject_csv_path)
+            header = csv_aslist[0]
+            
+            for col, title in enumerate(header):
+                if title in self.logistic_data_dict:
+                    print 'duplicate header, only last used'
+                self.logistic_data_dict[subject][title] = []
+                for row in csv_aslist[1:]:
+                    self.logistic_data_dict[subject][title].append(row[col])
             
             
             
@@ -72,7 +82,6 @@ class LogisticData(Process):
         self._assign_variables(required_vars)
         if not self._check_variables(requried_vars): return False
         
-        self.subject_rawtc_dict = {}
         
         for dir in self.subject_dirs:
             rawdir = os.path.join(dir, tmp_tc_dir)
@@ -82,18 +91,15 @@ class LogisticData(Process):
                 subject_name, area, mask_name = os.path.split(tcfile)[1].split('_')[0:3]
                 rl = vecread(tcfile, float=True)
                 
-                if subject_name not in self.subject_rawtc_dict:
-                    self.subject_rawtc_dict[subject_name] = {mask_name:{area:rl}}
+                if subject_name not in self.logistic_data_dict:
+                    self.logistic_data_dict[subject_name] = {area+mask_name:rl}
                 else:
-                    if mask_name not in self.subject_rawtc_dict[subject_name]:
-                        self.subject_rawtc_dict[subject_name][mask_name] = {area:rl}
-                    else:
-                        self.subject_rawtc_dict[subject_name][mask_name][area] = rl
-                        
+                    self.logistic_data_dict[subject_name][area+mask_name] = rl
+
+        
     
     def make_logistic_csv(self):
         
-        pass
                         
                 
     
