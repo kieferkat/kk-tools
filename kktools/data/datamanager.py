@@ -27,6 +27,26 @@ class LogisticData(Process):
         self.logistic_data_dict = {}
         
         
+                
+    def maskdump(self, subject_dirs=None, functional_name=None, anatomical_name=None,
+                 mask_names=None, mask_dir=None, mask_area_strs=['l','r','b'],
+                 mask_area_codes=[[1,1],[2,2],[1,2]]):
+        
+        required_vars = {'subject_dirs':subject_dirs, 'functional_name':functional_name,
+                         'anatomical_name':anatmocial_name, 'mask_names':mask_names,
+                         'mask_dir':mask_dir}
+        self._assign_variables(required_vars)
+        if not self._check_variables(requried_vars): return False
+            
+        mask_paths = [os.path.join(self.mask_dir, name) for name in self.mask_names]
+        
+        self.maskdump.run_over_subjects(self.subject_dirs, self.functional_name,
+                                        self.anatomical_name, mask_paths,
+                                        mask_area_strs=mask_area_strs,
+                                        mask_area_codes=mask_area_codes)
+        
+        
+        
     def load_behavioral_csv(self, csv_path, header=True, delimiter=',', newline='\n'):
         return self.csv.read(csv_path)
         
@@ -55,25 +75,7 @@ class LogisticData(Process):
                 for row in csv_aslist[1:]:
                     self.logistic_data_dict[subject][title].append(row[col])
             
-            
-            
-    def maskdump(self, subject_dirs=None, functional_name=None, anatomical_name=None,
-                 mask_names=None, mask_dir=None, mask_area_strs=['l','r','b'],
-                 mask_area_codes=[[1,1],[2,2],[1,2]]):
-        
-        required_vars = {'subject_dirs':subject_dirs, 'functional_name':functional_name,
-                         'anatomical_name':anatmocial_name, 'mask_names':mask_names,
-                         'mask_dir':mask_dir}
-        self._assign_variables(required_vars)
-        if not self._check_variables(requried_vars): return False
-            
-        mask_paths = [os.path.join(self.mask_dir, name) for name in self.mask_names]
-        
-        self.maskdump.run_over_subjects(self.subject_dirs, self.functional_name,
-                                        self.anatomical_name, mask_paths,
-                                        mask_area_strs=mask_area_strs,
-                                        mask_area_codes=mask_area_codes)
-        
+
     
     
     def load_subject_raw_tcs(self, subject_dirs=None, tmp_tc_dir='raw_tc'):
@@ -96,12 +98,139 @@ class LogisticData(Process):
                 else:
                     self.logistic_data_dict[subject_name][area+mask_name] = rl
 
-        
     
-    def make_logistic_csv(self):
+    
+    def write_logistic_data(self, filepath, data_dict):
         
-                        
+        columns = {'subject':[]}
+        data = []
+        
+        for subject in data_dict:
+            for key in data_dict[subject]:
+                if key not in columns:
+                    columns[key] = []
+        
+        for subject in data_dict:
+            col_lens = []
+            
+            for key in columns:
+                # ensure cols are same length:
+                if key is not 'subject':
+                    if key in data_dict[subject]:
+                        col_lens.append(len(data_dict[subject][key]))
+            
+            if len(np.unique(col_lens)) == 1:
                 
+                for key in columns:
+                    if key is not 'subject':
+                        if key in data_dict[subject]:
+                            columns[key].extend(data_dict[subject][key])
+                        else:
+                            columns[key].extend(['' for i in range(col_lens[0])])
+                    else:
+                        columns['subject'].extend([subject for i in range(col_lens[0])])
+        
+        
+        header = [key for key in columns]
+        data.append(header)
+        # fill csv lines:
+        for i in range(len(columns['subject'])):
+            data.append([columns[key][i] for key in header])
+        
+        self.csv.write(data, filepath)
+        
+        
+        
+        
+    def binarize_Y(self, Ylist):
+        uniqueY = np.unique(Ylist)
+        if uniqueY > 2:
+            print 'more than 2 unique values in Y matrix/column'
+            return False
+        elif uniqueY < 2:
+            print 'not enough unique Y values (all 1 value??)'
+            return False
+        else:
+            if (1. in uniqueY) and (0. in uniqueY):
+                return np.array(Ylist)
+            elif (1. in uniqueY):
+                return np.array([y if y == 1. else 0. for y in Ylist])
+            elif (0. in uniqueY):
+                return np.array([y if y == 0. else 1. for y in Ylist])
+            else:
+                print '1 will code for: ', uniqueY[0]
+                print '0 will code for: ', uniqueY[1]
+                return np.array([1. if y == uniqueY[0] else 0. for y in Ylist])
+        
+        
+        
+    def create_XY_matrices(self, independent_vars, dependent_var, conditional_dict={},
+                           filepath=None):
+        Ymatrix = []
+        Xmatrix = []
+        self.subject_indices = {}
+        
+        allvars = []
+        if type(independent_vars) in (list, tuple):
+            allvars.extend(independent_vars)
+        else:
+            allvars.append(independent_vars)
+            independent_vars = [independent_vars]
+        allvars.append(dependent_var)
+
+        
+        self.sparse_data_dict = self.logistic_data_dict.copy()
+        
+        if 'subjects' in conditional_dict:
+            for subject in sparse_data_dict:
+                if subject not in conditional_dict['subjects']:
+                    del(sparse_data_dict[subject])
+        
+        
+        for subject in self.sparse_data_dict:
+            
+            if subject not in self.subject_indices:
+                self.subject_indices[subject] = []
+            
+            var_range = []
+            cond_inds = []
+            
+            for variable in self.sparse_data_dict[subject]:
+                varlist = self.sparse_data_dict[subject][variable]
+                
+                if not var_range:
+                    var_range = range(len(varlist))
+                    
+                if variable in conditional_dict:
+                    cond_inds.append([i for i,x in enumerate(varlist) if x in conditional_dict[variable]])
+                    
+                if variable not in allvars:
+                    del(self.sparse_data_dict[subject][variable])
+              
+                
+            var_range = [ind for ind in var_range if all([ind in x for x in cond_inds])]
+
+            for variable in self.sparse_data_dict[subject]:
+                self.sparse_data_dict[subject][variable] = [v for i,v in enumerate(self.sparse_data_dict[subject][variable]) if i in var_range]
+                
+            
+        if filepath:
+            self.write_logistic_data(filepath, self.sparse_data_dict)
+                    
+        
+        for subject in self.sparse_data_dict:
+            binY = self.binarize_Y(self.sparse_data_dict[subject][dependent_var])
+            for i,Yval in enumerate(binY):
+                self.subject_indices[subject].append(len(Ymatrix))
+                Ymatrix.append(Yval)
+                xrow = []
+                for var in independent_vars:
+                    xrow.append(self.sparse_data_dict[subject][var][i])
+                Xmatrix.append(xrow)
+                
+        self.X = np.array(Xmatrix)
+        self.Y = np.array(Ymatrix)
+                        
     
     
     
