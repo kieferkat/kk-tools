@@ -192,19 +192,31 @@ class LogisticData(Process):
         
         
     def create_XY_matrices(self, independent_vars, dependent_var, conditional_dict={},
-                           filepath=None):
+                           keep_only_where={}, filepath=None):
         Ymatrix = []
         Xmatrix = []
         self.subject_indices = {}
-        
         allvars = []
-        if type(independent_vars) in (list, tuple):
-            allvars.extend(independent_vars)
-        else:
-            allvars.append(independent_vars)
+        
+        if type(independent_vars) not in (list, tuple):
             independent_vars = [independent_vars]
+        
+        if conditional_dict:
+            independent = []
+            indv_pairs = []
+            for ivar in independent_vars:
+                ivout = []
+                for key, vals in conditional_dict.items():
+                    independent.extend([ivar+'_'+key+'_'+str(val) for val in vals])
+                    ivout.extend([ivar+'_'+key+'_'+str(val) for val in vals])
+                indv_pairs.append((ivar, ivout))
+        else:
+            independent = independent_vars
+        
+        
+        allvars.extend(independent)
         allvars.append(dependent_var)
-        for key in conditional_dict:
+        for key in keep_only_where.keys():
             if key not in allvars:
                 allvars.append(key)
         print allvars
@@ -213,12 +225,12 @@ class LogisticData(Process):
         self.sparse_data_dict = self.logistic_data_dict.copy()
         
         
-        for condition in conditional_dict:
-            conditional_dict[condition] = [str(x) for x in conditional_dict[condition]]
+        for condition in keep_only_where:
+            keep_only_where[condition] = [str(x) for x in keep_only_where[condition]]
         
         
-        if 'subjects' in conditional_dict:
-            if subject not in conditional_dict['subjects']:
+        if 'subjects' in keep_only_where:
+            if subject not in keep_only_where['subjects']:
                 try:
                     del(sparse_data_dict[subject])
                     'removed subject', subject
@@ -227,10 +239,11 @@ class LogisticData(Process):
                 
                 
         del_subs = []
-        for keyitem in conditional_dict:
+        for keyitem in keep_only_where:
             for subject in self.sparse_data_dict:
                 if keyitem not in self.sparse_data_dict[subject]:
                     del_subs.append(subject)
+                    
                     
         for subject in del_subs:
             try:
@@ -243,31 +256,68 @@ class LogisticData(Process):
         for subject in self.sparse_data_dict:
             
             var_range = []
-            cond_inds = []
+            keep_inds = []
             del_vars = []
             
+            # keep indices setup:
             for variable in self.sparse_data_dict[subject]:
                 varlist = self.sparse_data_dict[subject][variable]
                 
                 if not var_range:
                     var_range = range(len(varlist))
-
                     
-                if variable in conditional_dict:
-                    cond_inds.append([i for i,x in enumerate(varlist) if x in conditional_dict[variable]])
-
+                if variable in keep_only_where:
+                    keep_inds.append([i for i,x in enumerate(varlist) if x in keep_only_where[variable]])
                     
                 if variable not in allvars:
                     del_vars.append(variable)
-
-            for variable in del_vars:
-                del(self.sparse_data_dict[subject][variable])
               
-            var_range = [ind for ind in var_range if all([ind in x for x in cond_inds])]
-
+            var_range = [ind for ind in var_range if all([ind in x for x in keep_inds])]
+            
             for variable in self.sparse_data_dict[subject]:
                 self.sparse_data_dict[subject][variable] = [v for i,v in enumerate(self.sparse_data_dict[subject][variable]) if i in var_range]
-                
+            
+            # new independent variables creation:
+            if conditional_dict:
+                dependent_check = []
+                for cond, vals in conditional_dict.items():
+                    for val in vals:
+                        for oiv, ivs in indv_pairs:
+                            for iv in ivs:
+                                cond_inds = []
+                                cond_vals = []
+                                
+                                for variable, varlist in self.sparse_data_dict[subject].items():
+                                    if variable == cond:
+                                        #print variable, cond, val, iv
+                                        cond_inds = [i for i,x in enumerate(varlist) if x is str(val)]
+                                        break
+                                        
+                                for variable, varlist in self.sparse_data_dict[subject].items():
+                                    if variable == oiv:
+                                        cond_vals = [v for i,v in enumerate(varlist) if i in cond_inds]
+                                        #print cond_inds
+                                        
+                                    
+                                    if variable == dependent_var:
+                                        dep_vals = [v for i,v in enumerate(varlist) if i in cond_inds]
+                                        dependent_check.append(dep_vals)
+                                        
+                                    
+                                self.sparse_data_dict[subject]['_'.join([oiv, cond, str(val)])] = cond_vals
+                            
+                if all([dependent_check[i] == dependent_check[i+1] for i in range(len(dependent_check)-1)]):
+                    #print 'dependent values check-out as same (according to conditional independent values)'
+                    #print dependent_check[0]
+                    self.sparse_data_dict[subject][dependent_var] = dependent_check[0]
+                else:
+                    print 'dependent variables NOT same across independent variable conditions.'
+                    #pprint(dependent_check)
+                    return False
+                            
+            
+            for variable in del_vars:
+                del(self.sparse_data_dict[subject][variable]) 
             
         if filepath:
             self.write_logistic_data(filepath, self.sparse_data_dict)
@@ -282,7 +332,11 @@ class LogisticData(Process):
                     self.subject_indices[subject].append(len(Ymatrix))
                     Ymatrix.append(float(Yval))
                     xrow = []
-                    for var in independent_vars:
+                    #print independent
+                    #print self.sparse_data_dict[subject].keys()
+                    #print [len(v) for v in self.sparse_data_dict[subject].values()]
+                    for var in independent:
+                        #print var, i, len(self.sparse_data_dict[subject][var])
                         xrow.append(self.sparse_data_dict[subject][var][i])
                     Xmatrix.append(xrow)
             else:
