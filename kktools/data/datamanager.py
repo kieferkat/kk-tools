@@ -147,7 +147,9 @@ class LogisticData(Process):
                         columns['subject'].extend([subject for i in range(col_lens[0])])
         
         
-        header = [key for key in columns]
+        header = ['subject']
+        header.extend(sorted([key for key in columns if key is not 'subject']))
+        print header
         data.append(header)
         # fill csv lines:
         for i in range(len(columns['subject'])):
@@ -159,9 +161,7 @@ class LogisticData(Process):
         
         
     def binarize_Y(self, Ylist):
-        #print Ylist
         uniqueY = np.unique(Ylist)
-        #print uniqueY
         if len(uniqueY) > 2:
             print 'more than 2 unique values in Y matrix/column', uniqueY
             return False
@@ -174,9 +174,8 @@ class LogisticData(Process):
             except:
                 floatY = None
             if floatY:
-                print floatY
                 if (1. in floatY) and (0. in floatY):
-                    return np.array(Ylist)
+                    return np.array([float(y) for y in Ylist])
                 elif (1. in floatY):
                     return np.array([y if float(y) == 1. else 0. for y in Ylist])
                 elif (0. in floatY):
@@ -205,6 +204,9 @@ class LogisticData(Process):
             allvars.append(independent_vars)
             independent_vars = [independent_vars]
         allvars.append(dependent_var)
+        for key in conditional_dict:
+            if key not in allvars:
+                allvars.append(key)
         print allvars
 
         
@@ -240,9 +242,6 @@ class LogisticData(Process):
         
         for subject in self.sparse_data_dict:
             
-            if subject not in self.subject_indices:
-                self.subject_indices[subject] = []
-            
             var_range = []
             cond_inds = []
             del_vars = []
@@ -252,25 +251,19 @@ class LogisticData(Process):
                 
                 if not var_range:
                     var_range = range(len(varlist))
-                    #print var_range
-                #print varlist
+
                     
                 if variable in conditional_dict:
-                    #print variable
-                    #print conditional_dict[variable]
                     cond_inds.append([i for i,x in enumerate(varlist) if x in conditional_dict[variable]])
-                    #print cond_inds
+
                     
                 if variable not in allvars:
                     del_vars.append(variable)
 
-            print del_vars
             for variable in del_vars:
                 del(self.sparse_data_dict[subject][variable])
               
-            #print cond_inds  
             var_range = [ind for ind in var_range if all([ind in x for x in cond_inds])]
-            #print var_range
 
             for variable in self.sparse_data_dict[subject]:
                 self.sparse_data_dict[subject][variable] = [v for i,v in enumerate(self.sparse_data_dict[subject][variable]) if i in var_range]
@@ -283,7 +276,8 @@ class LogisticData(Process):
         for subject in self.sparse_data_dict:
             binY = self.binarize_Y(self.sparse_data_dict[subject][dependent_var])
             if binY is not False:
-                print np.unique(binY)
+                if subject not in self.subject_indices:
+                    self.subject_indices[subject] = []
                 for i,Yval in enumerate(binY):
                     self.subject_indices[subject].append(len(Ymatrix))
                     Ymatrix.append(Yval)
@@ -623,16 +617,16 @@ class DataManager(Process):
             
         self.X = []
         self.Y = []
-        self.subject_trial_indices = {}
+        self.subject_indices = {}
         
         if not downsample_type:
             
             for subject, [trials, responses] in self.subject_design.items():
-                self.subject_trial_indices[subject] = []
+                self.subject_indices[subject] = []
                 
                 if not with_replacement:
                     for trial, response in zip(trials, responses):
-                        self.subject_trial_indices[subject].append(len(self.X))
+                        self.subject_indices[subject].append(len(self.X))
                         self.X.append(trial)
                         self.Y.append(response)
                         
@@ -656,11 +650,11 @@ class DataManager(Process):
                         
                         for i, trial in enumerate(set):
                             if i < upper_length:
-                                self.subject_trial_indices[subject].append(len(self.X))
+                                self.subject_indices[subject].append(len(self.X))
                                 self.X.append(trial)
                             
                         for rep_trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                            self.subject_trial_indices[subject].append(len(self.X))
+                            self.subject_indices[subject].append(len(self.X))
                             self.X.append(rep_trial)
                             
                     self.Y.extend([1. for x in range(upper_length)])
@@ -675,7 +669,7 @@ class DataManager(Process):
             negative_trials = []
             
             for subject, [trials, responses] in self.subject_design.items():
-                self.subject_trial_indices[subject] = []
+                self.subject_indices[subject] = []
                 
                 for trial, response, in zip(trials, responses):
                     if response > 0:
@@ -690,9 +684,9 @@ class DataManager(Process):
                 for i in range(min(len(positive_trials), len(negative_trials))):
                     [psub, ptrial] = positive_trials[i]
                     [nsub, ntrial] = negative_trials[i]
-                    self.subject_trial_indices[psub].append(len(self.X))
+                    self.subject_indices[psub].append(len(self.X))
                     self.X.append(ptrial)
-                    self.subject_trial_indices[nsub].append(len(self.X))
+                    self.subject_indices[nsub].append(len(self.X))
                     self.X.append(ntrial)
                     self.Y.extend([1.,-1.])
                     
@@ -711,11 +705,11 @@ class DataManager(Process):
                     
                     for i, (sub, trial) in enumerate(set):
                         if i < upper_length:
-                            self.subject_trial_indices[sub].append(len(self.X))
+                            self.subject_indices[sub].append(len(self.X))
                             self.X.append(trial)
                                                 
                     for sub, trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                        self.subject_trial_indices[sub].append(len(self.X))
+                        self.subject_indices[sub].append(len(self.X))
                         self.X.append(trial)
                         
                 self.Y.extend([1. for x in range(upper_length)])
@@ -729,7 +723,7 @@ class DataManager(Process):
         elif downsample_type == 'subject':
             
             for subject, [trials, responses] in self.subject_design.items():
-                self.subject_trial_indices[subject] = []
+                self.subject_indices[subject] = []
                 
                 subject_positives = []
                 subject_negatives = []
@@ -744,14 +738,14 @@ class DataManager(Process):
                 random.shuffle(subject_negatives)
                 
                 if min(len(subject_positives), len(subject_negatives)) == 0:
-                    del self.subject_trial_indices[subject]
+                    del self.subject_indices[subject]
                     
                 else:
                     if not with_replacement:
                         for i in range(min(len(subject_positives), len(subject_negatives))):
-                            self.subject_trial_indices[subject].append(len(self.X))
+                            self.subject_indices[subject].append(len(self.X))
                             self.X.append(subject_positives[i])
-                            self.subject_trial_indices[subject].append(len(self.X))
+                            self.subject_indices[subject].append(len(self.X))
                             self.X.append(subject_negatives[i])
                             self.Y.extend([1.,-1.])
                             
@@ -766,14 +760,14 @@ class DataManager(Process):
                             
                             for i, trial in enumerate(set):
                                 if i < upper_length:
-                                    self.subject_trial_indices[subject].append(len(self.X))
+                                    self.subject_indices[subject].append(len(self.X))
                                     self.X.append(trial)
                                 
                             print upper_length
                             print len(set)
                                 
                             for trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                                self.subject_trial_indices[subject].append(len(self.X))
+                                self.subject_indices[subject].append(len(self.X))
                                 self.X.append(trial)
                                 
                         self.Y.extend([1. for x in range(upper_length)])

@@ -4,6 +4,7 @@ import numpy as np
 import random
 import itertools
 import functools
+from pprint import pprint
 from ..base.process import Process
 
 
@@ -16,8 +17,11 @@ class CVObject(Process):
         self.crossvalidator = Crossvalidation()
         if data_obj:
             self.data = data_obj
+            self.subject_indices = getattr(self.data, 'subject_indices', None)
+            self.indices_dict = self.subject_indices
         else:
             self.data = None
+        self.crossvalidation_ready = False
     
     
     def set_folds(self, folds):
@@ -42,17 +46,17 @@ class CVObject(Process):
         # and crossvalidation across folds of these "keys"
         
         # if no indices dict specified, try and get it from self.data's
-        # subject_trial_indices, assuming it has been made.
+        # subject_indices, assuming it has been made.
         if not indices_dict:
             if not self.data:
                 print 'Unable to find indices_dict, quitting crossvalidation preparation'
                 return False
             else:
-                if not getattr(self.data, 'subject_trial_indices', None):
+                if not getattr(self.data, 'subject_indices', None):
                     print 'Unable to find indices_dict, quitting crossvalidation preparation'
                     return False
                 else:
-                    indices_dict = self.data.subject_trial_indices
+                    indices_dict = self.data.subject_indices
         
         # set folds:
         if folds:
@@ -70,25 +74,37 @@ class CVObject(Process):
         self.train_dict = self.crossvalidator.train_dict
         self.test_dict = self.crossvalidator.test_dict
         
+        if (getattr(self, 'X', None) is not None) and (getattr(self, 'Y', None) is not None):
+            print 'assigning to trainX, trainY, testX, testY...'
+            self.cv_group_XY(self.X, self.Y)
+            self.crossvalidation_ready = True
+        else:
+            print 'X and Y matrices, unset.. run cv_group_XY(X, Y) when ready to get cv groups'
+        
+        
         return True
             
             
     def subselect(self, data, indices):
-        return [data[i] for i in indices]
-        
+        ar = np.array([data[i].tolist() for i in indices], dtype=np.float32)
+        return ar
     
     def cv_group_XY(self, X, Y):
-        if getattr(self, train_dict, None) and getattr(self, test_dict, None):
-            self.cv_train_X = [self.subselect(X, tg) for tg in self.train_dict]
-            self.cv_train_Y = [self.subselect(Y, tg) for tg in self.train_dict]
-            self.cv_test_X = [self.subselect(X, tg) for tg in self.test_dict]
-            self.cv_test_Y = [self.subselect(Y, tg) for tg in self.test_dict]
+        if getattr(self, 'train_dict', None) and getattr(self, 'test_dict', None):
+            tr_inds = self.train_dict.values()
+            te_inds = self.test_dict.values()
+            self.trainX = [self.subselect(X, tg) for tg in tr_inds]
+            self.trainY = [self.subselect(Y, tg) for tg in tr_inds]
+            self.testX = [self.subselect(X, tg) for tg in te_inds]
+            self.testY = [self.subselect(Y, tg) for tg in te_inds]
+            self.crossvalidation_ready = True
+            print 'completed groupings into trainX/Y, testX/Y'
         else:
             print 'Could not make train/test X Y matrices'
         
         
     
-    def statsfunction_crossvalidator(self, statsfunction, Xgroups, Ygroups, **kwargs):
+    def statsfunction_over_folds(self, statsfunction, Xgroups, Ygroups, **kwargs):
         # the statsfunction ported in must contain ONLY 2 NON-KEYWORD ARGUMENTS:
         # X data and Y data. The rest of the arguments MUST BE KEYWORDED.
         # you can pass the keyword arguments to this function that you would
@@ -110,10 +126,13 @@ class CVObject(Process):
         testresults = []
         for trainX, trainY, testX, testY in zip(trainXgroups, trainYgroups,
                                                 testXgroups, testYgroups):
+            print 'Crossvalidating next group.'
             trainpartial = functools.partial(trainfunction, trainX, trainY, **trainkwargs)
             trainresult = trainpartial()
             testpartial = functools.partial(testfunction, testX, testY, trainresult)
             testresult = testpartial()
+            print 'this groups\' test result:'
+            pprint(testresult)
             trainresults.append(trainresult)
             testresults.append(testresult)
             
@@ -193,7 +212,7 @@ class Crossvalidation(object):
         
         if self.folds is None:
             print 'Folds unset, defaulting to leave one out crossvalidation...'
-            self.folds = len(subject_inds)
+            self.folds = len(index_keys)
         
         divisible_keys, remainder_keys = self.excise_remainder(index_keys, self.folds)
         
