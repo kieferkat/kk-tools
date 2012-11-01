@@ -25,7 +25,7 @@ class ScikitsSVM(CVObject):
         self.Y = getattr(self.data, 'Y', None)
         if self.Y:
             self.replace_Y_negative_ones()
-        self.indices_dict = getattr(self.data, 'subject_trial_indices', None)
+        self.subject_indices = getattr(self.data, 'subject_indices', None)
         
             
     def fit_svc(self, X, Y, cache_size=5000, class_weight='auto'):
@@ -41,24 +41,22 @@ class ScikitsSVM(CVObject):
         return clf
     
     
-    def test_accuracy(self, X, Y, clf):
-        if clf is not None:
-            X = simple_normalize(X)
-            correct = []
-            print 'Checking accuracy of next test group...'
+    def test_svm(self, X, Y, clf):
+
+        X = simple_normalize(X)
+        correct = []
+        print 'Checking accuracy of next test group...'
+        
+        for trial, outcome in zip(X, Y):
+            prediction = clf.predict(trial)
+            correct.append((prediction[0] == outcome))
             
-            for trial, outcome in zip(X, Y):
-                prediction = clf.predict(trial)
-                correct.append((prediction[0] == outcome))
-                
-            accuracy = float(sum(correct))/float(len(correct))
-            print 'Test group accuracy: ', accuracy
-            return accuracy
-        else:
-            print 'ERROR: must keyword specify the classifier'
+        accuracy = float(sum(correct))/float(len(correct))
+        print 'Test group accuracy: ', accuracy
+        return accuracy
     
     
-    def train(self, X, Y):
+    def train_svm(self, X, Y):
         
         print 'Training next group...'
         X = simple_normalize(X)
@@ -68,16 +66,17 @@ class ScikitsSVM(CVObject):
     
     def setup_crossvalidation(self, folds=None):
         folds = folds or self.folds
-        if self.indices_dict:
-            self.prepare_folds(folds=folds, indices_dict=self.indices_dict)
-        self.cv_group_XY(self.X, self.Y)
+        if self.subject_indices:
+            self.prepare_folds(folds=folds, indices_dict=self.subject_indices)
+        else:
+            print 'no subject indices set, cant setup cv folds'
         
         
     def crossvalidate(self, folds=None):
         self.setup_crossvalidation(folds=folds)
-        trainresults, testresults = self.traintest_crossvalidator(self.train, self.test_accuracy,
-                                                                  self.cv_train_X, self.cv_train_Y,
-                                                                  self.cv_test_X, self.cv_test_Y)
+        trainresults, testresults = self.traintest_crossvalidator(self.train_svm, self.test_svm,
+                                                                  self.trainX, self.trainY,
+                                                                  self.testX, self.testY)
         
         self.fold_accuracies = testresults
         self.average_accuracy = sum(self.fold_accuracies)/len(self.fold_accuracies)
