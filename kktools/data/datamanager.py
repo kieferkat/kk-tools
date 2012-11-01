@@ -280,7 +280,7 @@ class LogisticData(Process):
                     self.subject_indices[subject] = []
                 for i,Yval in enumerate(binY):
                     self.subject_indices[subject].append(len(Ymatrix))
-                    Ymatrix.append(Yval)
+                    Ymatrix.append(float(Yval))
                     xrow = []
                     for var in independent_vars:
                         xrow.append(self.sparse_data_dict[subject][var][i])

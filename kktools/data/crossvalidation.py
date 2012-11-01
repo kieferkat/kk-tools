@@ -26,6 +26,7 @@ class CVObject(Process):
     
     def set_folds(self, folds):
         self.crossvalidator.folds = folds
+        self.folds = folds
         
         
     def replace_Y_vals(self, Y, original_val, new_val):
@@ -86,17 +87,21 @@ class CVObject(Process):
             
             
     def subselect(self, data, indices):
-        ar = np.array([data[i].tolist() for i in indices], dtype=np.float32)
-        return ar
+        return np.array([data[i].tolist() for i in indices])
+
     
     def cv_group_XY(self, X, Y):
         if getattr(self, 'train_dict', None) and getattr(self, 'test_dict', None):
-            tr_inds = self.train_dict.values()
-            te_inds = self.test_dict.values()
-            self.trainX = [self.subselect(X, tg) for tg in tr_inds]
-            self.trainY = [self.subselect(Y, tg) for tg in tr_inds]
-            self.testX = [self.subselect(X, tg) for tg in te_inds]
-            self.testY = [self.subselect(Y, tg) for tg in te_inds]
+            fold_inds = self.train_dict.keys()
+            assert fold_inds == self.test_dict.keys()
+            
+            self.trainX = [self.subselect(X, self.train_dict[tg]) for tg in fold_inds]
+            self.trainY = [self.subselect(Y,self.train_dict[tg]) for tg in fold_inds]
+            self.testX = [self.subselect(X, self.test_dict[tg]) for tg in fold_inds]
+            self.testY = [self.subselect(Y, self.test_dict[tg]) for tg in fold_inds]
+            
+            self.subjects_in_folds = [self.crossvalidator.cv_sets[i] for i in fold_inds]
+            
             self.crossvalidation_ready = True
             print 'completed groupings into trainX/Y, testX/Y'
         else:
@@ -120,16 +125,17 @@ class CVObject(Process):
         
         
     def traintest_crossvalidator(self, trainfunction, testfunction, trainXgroups,
-                                 trainYgroups, testXgroups, testYgroups, **trainkwargs):
+                                 trainYgroups, testXgroups, testYgroups, train_kwargs_dict={},
+                                 test_kwargs_dict={}):
         
         trainresults = []
         testresults = []
         for trainX, trainY, testX, testY in zip(trainXgroups, trainYgroups,
                                                 testXgroups, testYgroups):
             print 'Crossvalidating next group.'
-            trainpartial = functools.partial(trainfunction, trainX, trainY, **trainkwargs)
+            trainpartial = functools.partial(trainfunction, trainX, trainY, **train_kwargs_dict)
             trainresult = trainpartial()
-            testpartial = functools.partial(testfunction, testX, testY, trainresult)
+            testpartial = functools.partial(testfunction, testX, testY, trainresult, **test_kwargs_dict)
             testresult = testpartial()
             print 'this groups\' test result:'
             pprint(testresult)
@@ -192,6 +198,7 @@ class Crossvalidation(object):
             for te_key in testing_subjects:
                 test_dict[p].extend(self.indices_dict[te_key])
                 
+                
         return train_dict, test_dict
                 
         
@@ -217,12 +224,12 @@ class Crossvalidation(object):
         divisible_keys, remainder_keys = self.excise_remainder(index_keys, self.folds)
         
         # cv_sets is a dict with group IDs and indices:
-        cv_sets = self.chunker(divisible_keys, len(divisible_keys)/self.folds)
+        self.cv_sets = self.chunker(divisible_keys, len(divisible_keys)/self.folds)
         
         # find the permutations of the group IDs, leaving one out:
-        set_permutations = itertools.combinations(cv_sets.keys(), len(cv_sets.keys())-1)
+        set_permutations = itertools.combinations(self.cv_sets.keys(), len(self.cv_sets.keys())-1)
         
-        self.train_dict, self.test_dict = self.generate_sets(cv_sets, set_permutations,
+        self.train_dict, self.test_dict = self.generate_sets(self.cv_sets, set_permutations,
                                                              remainder_keys, leave_mod_in)
         
         
