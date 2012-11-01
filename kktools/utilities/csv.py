@@ -42,7 +42,7 @@ class CsvTools(object):
     def write(self, lines, filename, delimiter=',', newline='\n'):
         fid = open(filename,'w')
         for line in lines:
-            fid.write(delimiter.join(line)+newline)
+            fid.write(delimiter.join([str(l) for l in line])+newline)
         fid.close()
         
         

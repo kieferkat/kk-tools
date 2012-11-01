@@ -26,6 +26,8 @@ class AfniFunction(Process):
     def _clean(self, glob_prefix, type='standard', path=None):
         if path:
             prefix = os.path.join(path, glob_prefix)
+        else:
+            prefix = glob_prefix
             
         if type is 'standard':
             self._clean_remove(glob.glob(prefix))
@@ -66,7 +68,7 @@ class MaskAve(AfniFunction):
         except:
             pass
         
-        for area, codes in zip(area_strs, area_codes):
+        for area, codes in zip(mask_area_strs, mask_area_codes):
             
             raw_tc = '_'.join([subject_name, area, mask_name, 'raw.tc'])
             raw_tc = os.path.join(tmpdir, raw_tc)
@@ -98,7 +100,7 @@ class FractionizeMask(AfniFunction):
         subject_path = os.path.split(dataset_path)[0]
         mask_name = (os.path.split(mask_path)[1]).split('+')[0]
         
-        subject_mask = os.path.join(subject_path, mask_name+subject_mask_prefix+'+orig')
+        subject_mask = os.path.join(subject_path, mask_name+subject_mask_suffix+'+orig')
         self._clean(subject_mask+'*')
         
         cmd = ['3dfractionize', '-template', dataset_path, '-input', mask_path,
@@ -138,7 +140,7 @@ class MaskDump(AfniFunction):
     def run_over_subjects(self, subjdirs, dataset_name, anat_name, mask_paths,
                           mask_area_strs=['l','r','b'], mask_area_codes=[[1,1],[2,2],[1,2]]):
         
-        for dir in subjdir:
+        for dir in subjdirs:
             dataset_path = os.path.join(dir, dataset_name)
             anat_path = os.path.join(dir, anat_name)
             

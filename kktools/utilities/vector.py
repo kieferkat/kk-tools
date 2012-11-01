@@ -5,11 +5,11 @@ import subprocess
 from ..utilities.cleaners import glob_remove
 
 
-def read(vectorfile, float=False):
+def read(vectorfile, usefloat=False):
     fid = open(vectorfile,'r')
     lines = fid.readlines()
     fid.close()
-    if not float:
+    if not usefloat:
         lines = [int(l.strip('\n')) for l in lines]
     else:
         lines = [float(l.strip('\n')) for l in lines]
@@ -62,7 +62,7 @@ def offset(vector, offset):
 
 
 
-def combine(vectors, operation_on_overlap='zero', float=False, warning_on_overlap=True):
+def combine(vectors, operation_on_overlap='zero', usefloat=False, warning_on_overlap=True):
     
     if operation_on_overlap not in ['multiply','add','sum','subtract','zero']:
         print 'invalid operation specified'
@@ -73,7 +73,7 @@ def combine(vectors, operation_on_overlap='zero', float=False, warning_on_overla
     for i, item_set in enumerate(zip(*vectors)):
         
         if len(np.nonzero(item_set)[0]) == 0:
-            if float:
+            if usefloat:
                 single_vector.append(0.)
             else:
                 single_vector.append(0)
@@ -97,7 +97,7 @@ def combine(vectors, operation_on_overlap='zero', float=False, warning_on_overla
                 single_vector.append(val)
                 
             elif operation_on_overlap == 'zero':
-                if float:
+                if usefloat:
                     single_vector.append(0.)
                 else:
                     single_vector.append(0)

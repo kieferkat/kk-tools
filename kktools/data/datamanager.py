@@ -23,7 +23,7 @@ class LogisticData(Process):
     def __init__(self, variable_dict=None):
         super(LogisticData, self).__init__(variable_dict=variable_dict)
         self.csv = CsvTools()
-        self.maskdump = MaskDump()
+        self.maskdump_func = MaskDump()
         self.logistic_data_dict = {}
         
         
@@ -33,14 +33,18 @@ class LogisticData(Process):
                  mask_area_codes=[[1,1],[2,2],[1,2]]):
         
         required_vars = {'subject_dirs':subject_dirs, 'functional_name':functional_name,
-                         'anatomical_name':anatmocial_name, 'mask_names':mask_names,
+                         'anatomical_name':anatomical_name, 'mask_names':mask_names,
                          'mask_dir':mask_dir}
         self._assign_variables(required_vars)
-        if not self._check_variables(requried_vars): return False
+        if not self._check_variables(required_vars): return False
+            
+        for i, mask in enumerate(self.mask_names):
+            if not mask.endswith('+tlrc'):
+                self.mask_names[i] = mask+'+tlrc'
             
         mask_paths = [os.path.join(self.mask_dir, name) for name in self.mask_names]
         
-        self.maskdump.run_over_subjects(self.subject_dirs, self.functional_name,
+        self.maskdump_func.run_over_subjects(self.subject_dirs, self.functional_name,
                                         self.anatomical_name, mask_paths,
                                         mask_area_strs=mask_area_strs,
                                         mask_area_codes=mask_area_codes)
@@ -51,29 +55,35 @@ class LogisticData(Process):
         return self.csv.read(csv_path)
         
         
-    def load_subject_csvs(self, subject_dirs=None, subject_csv_name=None):
+    def load_subject_csvs(self, subject_dirs=None, behavior_csv_name=None):
         
         required_vars = {'subject_dirs':subject_dirs, 'behavior_csv_name':behavior_csv_name}
         self._assign_variables(required_vars)
-        if not self._check_variables(requried_vars): return False
+        if not self._check_variables(required_vars): return False
                 
         for dir in self.subject_dirs:
             
-            subject_name = os.path.split(dir)[1]
+            subject = os.path.split(dir)[1]
             subject_csv_path = os.path.join(dir, self.behavior_csv_name)
             
-            if not subject_name in self.logistic_data_dict:
-                self.logistic_data_dict[subject_name] = {}
+            if os.path.exists(subject_csv_path):
+                print 'loading ', subject_csv_path
             
-            csv_aslist = self.load_behavioral_csv(subject_csv_path)
-            header = csv_aslist[0]
+                if not subject in self.logistic_data_dict:
+                    self.logistic_data_dict[subject] = {}
+                
+                csv_aslist = self.load_behavioral_csv(subject_csv_path)
+                header = csv_aslist[0]
+                
+                for col, title in enumerate(header):
+                    if title in self.logistic_data_dict:
+                        print 'duplicate header, only last used'
+                    self.logistic_data_dict[subject][title] = []
+                    for row in csv_aslist[1:]:
+                        self.logistic_data_dict[subject][title].append(row[col])
             
-            for col, title in enumerate(header):
-                if title in self.logistic_data_dict:
-                    print 'duplicate header, only last used'
-                self.logistic_data_dict[subject][title] = []
-                for row in csv_aslist[1:]:
-                    self.logistic_data_dict[subject][title].append(row[col])
+            else:
+                print 'behavioral csv not found for: ', subject
             
 
     
@@ -82,21 +92,27 @@ class LogisticData(Process):
         
         required_vars = {'subject_dirs':subject_dirs}
         self._assign_variables(required_vars)
-        if not self._check_variables(requried_vars): return False
+        if not self._check_variables(required_vars): return False
         
         
         for dir in self.subject_dirs:
             rawdir = os.path.join(dir, tmp_tc_dir)
-            raw_tcs = glob.glob(os.path.join(rawdir,'*.tc'))
             
-            for tcfile in raw_tcs:
-                subject_name, area, mask_name = os.path.split(tcfile)[1].split('_')[0:3]
-                rl = vecread(tcfile, float=True)
+            if os.path.exists(rawdir):
+                print 'loading raw tcs for subject: ', os.path.split(dir)[1]
+                raw_tcs = glob.glob(os.path.join(rawdir,'*.tc'))
                 
-                if subject_name not in self.logistic_data_dict:
-                    self.logistic_data_dict[subject_name] = {area+mask_name:rl}
-                else:
-                    self.logistic_data_dict[subject_name][area+mask_name] = rl
+                for tcfile in raw_tcs:
+                    subject_name, area, mask_name = os.path.split(tcfile)[1].split('_')[0:3]
+                    rl = vecread(tcfile, usefloat=True)
+                    
+                    if subject_name not in self.logistic_data_dict:
+                        self.logistic_data_dict[subject_name] = {area+mask_name:rl}
+                    else:
+                        self.logistic_data_dict[subject_name][area+mask_name] = rl
+                        
+            else:
+                print 'no raw tc dir found for subject: ', os.path.split(dir)[1]
 
     
     
@@ -143,20 +159,32 @@ class LogisticData(Process):
         
         
     def binarize_Y(self, Ylist):
+        #print Ylist
         uniqueY = np.unique(Ylist)
-        if uniqueY > 2:
-            print 'more than 2 unique values in Y matrix/column'
+        #print uniqueY
+        if len(uniqueY) > 2:
+            print 'more than 2 unique values in Y matrix/column', uniqueY
             return False
-        elif uniqueY < 2:
-            print 'not enough unique Y values (all 1 value??)'
+        elif len(uniqueY) < 2:
+            print 'not enough unique Y values (all 1 value??)', uniqueY
             return False
         else:
-            if (1. in uniqueY) and (0. in uniqueY):
-                return np.array(Ylist)
-            elif (1. in uniqueY):
-                return np.array([y if y == 1. else 0. for y in Ylist])
-            elif (0. in uniqueY):
-                return np.array([y if y == 0. else 1. for y in Ylist])
+            try:
+                floatY = [float(y) for y in uniqueY]
+            except:
+                floatY = None
+            if floatY:
+                print floatY
+                if (1. in floatY) and (0. in floatY):
+                    return np.array(Ylist)
+                elif (1. in floatY):
+                    return np.array([y if float(y) == 1. else 0. for y in Ylist])
+                elif (0. in floatY):
+                    return np.array([y if float(y) == 0. else 1. for y in Ylist])
+                else:
+                    print '1 will code for: ', floatY[0]
+                    print '0 will code for: ', floatY[1]
+                    return np.array([1. if float(y) == floatY[0] else 0. for y in Ylist])
             else:
                 print '1 will code for: ', uniqueY[0]
                 print '0 will code for: ', uniqueY[1]
@@ -177,14 +205,37 @@ class LogisticData(Process):
             allvars.append(independent_vars)
             independent_vars = [independent_vars]
         allvars.append(dependent_var)
+        print allvars
 
         
         self.sparse_data_dict = self.logistic_data_dict.copy()
         
+        
+        for condition in conditional_dict:
+            conditional_dict[condition] = [str(x) for x in conditional_dict[condition]]
+        
+        
         if 'subjects' in conditional_dict:
-            for subject in sparse_data_dict:
-                if subject not in conditional_dict['subjects']:
+            if subject not in conditional_dict['subjects']:
+                try:
                     del(sparse_data_dict[subject])
+                    'removed subject', subject
+                except:
+                    pass
+                
+                
+        del_subs = []
+        for keyitem in conditional_dict:
+            for subject in self.sparse_data_dict:
+                if keyitem not in self.sparse_data_dict[subject]:
+                    del_subs.append(subject)
+                    
+        for subject in del_subs:
+            try:
+                del(self.sparse_data_dict[subject])
+                print 'subject removed due to missing conditional item', subject
+            except:
+                pass
         
         
         for subject in self.sparse_data_dict:
@@ -194,21 +245,32 @@ class LogisticData(Process):
             
             var_range = []
             cond_inds = []
+            del_vars = []
             
             for variable in self.sparse_data_dict[subject]:
                 varlist = self.sparse_data_dict[subject][variable]
                 
                 if not var_range:
                     var_range = range(len(varlist))
+                    #print var_range
+                #print varlist
                     
                 if variable in conditional_dict:
+                    #print variable
+                    #print conditional_dict[variable]
                     cond_inds.append([i for i,x in enumerate(varlist) if x in conditional_dict[variable]])
+                    #print cond_inds
                     
                 if variable not in allvars:
-                    del(self.sparse_data_dict[subject][variable])
+                    del_vars.append(variable)
+
+            print del_vars
+            for variable in del_vars:
+                del(self.sparse_data_dict[subject][variable])
               
-                
+            #print cond_inds  
             var_range = [ind for ind in var_range if all([ind in x for x in cond_inds])]
+            #print var_range
 
             for variable in self.sparse_data_dict[subject]:
                 self.sparse_data_dict[subject][variable] = [v for i,v in enumerate(self.sparse_data_dict[subject][variable]) if i in var_range]
@@ -220,13 +282,17 @@ class LogisticData(Process):
         
         for subject in self.sparse_data_dict:
             binY = self.binarize_Y(self.sparse_data_dict[subject][dependent_var])
-            for i,Yval in enumerate(binY):
-                self.subject_indices[subject].append(len(Ymatrix))
-                Ymatrix.append(Yval)
-                xrow = []
-                for var in independent_vars:
-                    xrow.append(self.sparse_data_dict[subject][var][i])
-                Xmatrix.append(xrow)
+            if binY is not False:
+                print np.unique(binY)
+                for i,Yval in enumerate(binY):
+                    self.subject_indices[subject].append(len(Ymatrix))
+                    Ymatrix.append(Yval)
+                    xrow = []
+                    for var in independent_vars:
+                        xrow.append(self.sparse_data_dict[subject][var][i])
+                    Xmatrix.append(xrow)
+            else:
+                print 'binY is incorrect...', subject, binY
                 
         self.X = np.array(Xmatrix)
         self.Y = np.array(Ymatrix)
@@ -255,7 +321,7 @@ class DataManager(Process):
                          'nifti_name':nifti_name}
         
         self._assign_variables(required_vars)
-        if not self._check_variables(requried_vars): return False
+        if not self._check_variables(required_vars): return False
             
         self.talairach_template_path = talairach_template_path or getattr(self,'talairach_template_path',None)
         if not self.nifti_name.endswith('.nii'):
