@@ -137,12 +137,26 @@ class MaskDump(AfniFunction):
                              mask_area_codes=mask_area_codes)
         
         
-    def run_over_subjects(self, subjdirs, dataset_name, anat_name, mask_paths,
-                          mask_area_strs=['l','r','b'], mask_area_codes=[[1,1],[2,2],[1,2]]):
+    def run_over_subjects(self, subject_dirs=None, functional_name=None, anatomical_name=None,
+                          mask_names=None, mask_dir=None, mask_area_strs=['l','r','b'],
+                          mask_area_codes=[[1,1],[2,2],[1,2]]):
         
-        for dir in subjdirs:
-            dataset_path = os.path.join(dir, dataset_name)
-            anat_path = os.path.join(dir, anat_name)
+        required_vars = {'subject_dirs':subject_dirs, 'functional_name':functional_name,
+                         'anatomical_name':anatomical_name, 'mask_names':mask_names,
+                         'mask_dir':mask_dir}
+        self._assign_variables(required_vars)
+        if not self._check_variables(required_vars): return False
+        
+        
+        for i, mask in enumerate(self.mask_names):
+            if not mask.endswith('+tlrc'):
+                self.mask_names[i] = mask+'+tlrc'
+                
+        mask_paths = [os.path.join(self.mask_dir, name) for name in self.mask_names]
+
+        for dir in self.subject_dirs:
+            dataset_path = os.path.join(dir, self.functional_name)
+            anat_path = os.path.join(dir, self.anatomical_name)
             
             self.run(dataset_path, anat_path, mask_paths, mask_area_strs=mask_area_strs,
                      mask_area_codes=mask_area_codes)

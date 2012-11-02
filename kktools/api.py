@@ -1,8 +1,8 @@
 
 
-from data.crossvalidation import Crossvalidation, CVObject
-from data.datamanager import DataManager, LogisticData
-from data.nifti import NiftiTools
+from base.crossvalidation import Crossvalidation, CVObject
+from base.datamanager import DataManager, LogisticData
+from base.nifti import NiftiTools
 from base.variables import Variables
 
 from stats.linearsvm import ScikitsSVM

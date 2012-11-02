@@ -8,6 +8,8 @@ import numpy as np
 import scipy.stats as stats
 import sys
 import pylab
+from vector import read as vecread
+#from ..base.process import Process
 
 # yeah, i do know there is a csv module. who cares?
 
@@ -44,6 +46,100 @@ class CsvTools(object):
         for line in lines:
             fid.write(delimiter.join([str(l) for l in line])+newline)
         fid.close()
+        
+    
+    def load_csvs(self, subject_dirs, csv_name, verbose=True):
+        csv_dict = {}
+        for dir in subject_dirs:
+            id = os.path.split(dir)[1]
+            csv_path = os.path.join(dir, csv_name)
+            
+            try:
+                if verbose:
+                    print 'Attempting to load csv for subject:', id
+                csv_lines = self.read(csv_path)
+                csv_dict[id] = csv_lines
+            except:
+                if verbose:
+                    print 'Error loading csv for subject:', id
+        
+        return csv_dict
+    
+    
+    def split_header_data(self, csv):
+        return csv[0], csv[1:]
+    
+    
+    def csv_to_coldict(self, csv, verbose=True):
+        coldict = {}
+        header, data = self.split_header_data(csv)
+        for i, head in enumerate(header):
+            if verbose:
+                if head in coldict:
+                    print 'Duplicate header, only last column used.'
+            coldict[head] = [row[i] for row in data]
+        return coldict
+        
+    
+    def merge_csv_dicts(self, basedict, add_dicts, keylevel=0, verbose=True):
+        
+        if type(add_dicts) not in (list, tuple):
+            add_dicts = [add_dicts]
+        
+        for adict in add_dicts:
+            for akey, avals in adict.items():
+                if keylevel == 0:
+                    if akey in basedict:
+                        if verbose:
+                            print 'Duplicate key, replacing values.'
+                    basedict[akey] = avals
+                elif keylevel == 1:
+                    for subkey, subvals in avals:
+                        if not akey in basedict:
+                            basedict[akey] = {subkey:subvals}
+                        else:
+                            if subkey in basedict[akey]:
+                                if verbose:
+                                    print 'Duplicate sub-key, replacing values.'
+                            basedict[akey][subkey] = subvals
+                            
+        return basedict
+        
+        
+    def _coldict_linehelper(self, coldict, header):
+        lines = []
+        for row in range(max([len(x) for x in coldict.values()])):
+            line = []
+            for headeritem in header:
+                value_list = coldict[headeritem]
+                if len(value_list) > row:
+                    line.append(value_list[row])
+                else:
+                    line.append('')
+            lines.append(line)
+        return lines
+    
+        
+    def coldict_tolines(self, coldict):
+        lines = [coldict.keys()]
+        datalines = self._coldict_linehelper(coldict, lines[0])
+        lines.extend(datalines)
+        return lines
+    
+    
+    def subject_csvdicts_tolines(self, subjectdict):
+        # all subjects must have same coldict keys for now
+        lines = []
+        for subject, coldict in subjectdict.items():
+            if lines == []:
+                header = ['subject']+sorted(coldict.keys())
+                lines.append(header)
+            subjectlines = self._coldict_linehelper(self, coldict, lines[0][1:])
+            lines.extend([[subject]+l for l in subjectlines])
+            
+        return lines
+            
+        
         
         
     def tofloat(self, matrix):
