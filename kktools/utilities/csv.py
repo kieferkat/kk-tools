@@ -8,7 +8,7 @@ import numpy as np
 import scipy.stats as stats
 import sys
 import pylab
-from vector import read as vecread
+from vector import vecread
 #from ..base.process import Process
 
 # yeah, i do know there is a csv module. who cares?
@@ -94,7 +94,7 @@ class CsvTools(object):
                             print 'Duplicate key, replacing values.'
                     basedict[akey] = avals
                 elif keylevel == 1:
-                    for subkey, subvals in avals:
+                    for subkey, subvals in avals.items():
                         if not akey in basedict:
                             basedict[akey] = {subkey:subvals}
                         else:
@@ -134,7 +134,7 @@ class CsvTools(object):
             if lines == []:
                 header = ['subject']+sorted(coldict.keys())
                 lines.append(header)
-            subjectlines = self._coldict_linehelper(self, coldict, lines[0][1:])
+            subjectlines = self._coldict_linehelper(coldict, lines[0][1:])
             lines.extend([[subject]+l for l in subjectlines])
             
         return lines

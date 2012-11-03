@@ -1,7 +1,7 @@
 
 
 from base.crossvalidation import Crossvalidation, CVObject
-from base.datamanager import DataManager, LogisticData
+from base.datamanager import BrainData, CsvData
 from base.nifti import NiftiTools
 from base.variables import Variables
 

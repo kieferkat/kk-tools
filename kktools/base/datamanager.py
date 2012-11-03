@@ -14,7 +14,244 @@ from nifti import NiftiTools
 from ..utilities.cleaners import glob_remove
 from ..utilities.csv import CsvTools
 from ..afni.functions import FractionizeMask, MaskAve, MaskDump
-from ..utilities.vector import read, subject_vector_dict as vecread, make_vector_dict
+from ..utilities.vector import vecread
+from ..utilities.vector import subject_vector_dict as make_vector_dict
+
+
+
+            
+
+        
+
+class DataManager(Process):
+    
+    def __init__(self, variable_dict=None):
+        super(DataManager, self).__init__(variable_dict=variable_dict)
+        self.nifti = NiftiTools()
+        
+            
+            
+    def recode_variable(self, var_list, oldnew_valdict, allow_unspecified=True,
+                        as_string=False):
+        
+        recoded = []
+        for var in var_list:
+            if var in oldnew_valdict.keys():
+                nval = oldnew_valdict[var]
+                if as_string:
+                    recoded.append(str(nval))
+                else:
+                    recoded.append(float(nval))
+            else:
+                if allow_unspecified:
+                    if as_string:
+                        recoded.append(string(var))
+                    else:
+                        recoded.append(float(var))
+                else:
+                    print 'variable not found in replacement dict'
+                    return False
+                
+        if as_string:
+            return recoded
+        else:
+            return np.array(recoded)
+                
+                      
+        
+    def _xy_matrix_tracker(self):
+        print 'X (trials) length: ', len(self.X)
+        print 'Y (responses) length: ', len(self.Y)
+        print 'positive responses: ', self.Y.count(1)
+        print 'negative responses: ', self.Y.count(-1)
+        
+        
+        
+    def create_XY_matrices(self, subject_design=None, downsample_type=None, with_replacement=False,
+                           replacement_ceiling=None, random_seed=None, Ybinary=[1.,-1.], verbose=True):
+        
+        
+        required_vars = {'subject_design':subject_design}
+        self._assign_variables(required_vars)
+        if not self._check_variables(required_vars): return False
+        
+        
+        self.random_seed = random_seed or getattr(self,'random_seed',None)
+        
+        
+        if self.random_seed:
+            np.random.seed(self.random_seed)
+            random.seed(self.random_seed)
+            
+            
+        self.X = []
+        self.Y = []
+        self.subject_indices = {}
+        
+        
+        if not downsample_type:
+            
+            for subject, [trials, responses] in self.subject_design.items():
+                self.subject_indices[subject] = []
+                
+                if not with_replacement:
+                    for trial, response in zip(trials, responses):
+                        self.subject_indices[subject].append(len(self.X))
+                        self.X.append(trial)
+                        self.Y.append(response)
+                        
+                elif with_replacement:
+                    positive_trials = []
+                    negative_trials = []
+                    
+                    for trial, response in zip(trials, responses):
+                        if response > 0:
+                            positive_trials.append(trial)
+                        elif response < 0:
+                            negative_trials.append(trial)
+                    
+                    if not replacement_ceiling:
+                        upper_length = max(len(positive_trials), len(negative_trials))
+                    else:
+                        upper_length = replacement_ceiling
+                    
+                    for set in [positive_trials, negative_trials]:
+                        random.shuffle(set)
+                        
+                        for i, trial in enumerate(set):
+                            if i < upper_length:
+                                self.subject_indices[subject].append(len(self.X))
+                                self.X.append(trial)
+                            
+                        for rep_trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
+                            self.subject_indices[subject].append(len(self.X))
+                            self.X.append(rep_trial)
+                            
+                    self.Y.extend([1. for x in range(upper_length)])
+                    self.Y.extend([-1. for x in range(upper_length)])
+        
+                if verbose:
+                    self._xy_matrix_tracker()
+                    
+                    
+                    
+        elif downsample_type == 'group':
+            
+            positive_trials = []
+            negative_trials = []
+            
+            for subject, [trials, responses] in self.subject_design.items():
+                self.subject_indices[subject] = []
+                
+                for trial, response, in zip(trials, responses):
+                    if response > 0:
+                        positive_trials.append([subject,trial])
+                    elif response < 0:
+                        negative_trials.append([subject,trial])
+                        
+            random.shuffle(positive_trials)
+            random.shuffle(negative_trials)
+            
+            if not with_replacement:
+                for i in range(min(len(positive_trials), len(negative_trials))):
+                    [psub, ptrial] = positive_trials[i]
+                    [nsub, ntrial] = negative_trials[i]
+                    self.subject_indices[psub].append(len(self.X))
+                    self.X.append(ptrial)
+                    self.subject_indices[nsub].append(len(self.X))
+                    self.X.append(ntrial)
+                    self.Y.extend([1.,-1.])
+                    
+                if verbose:
+                    self._xy_matrix_tracker()
+                    
+            elif with_replacement:
+                
+                if not replacement_ceiling:
+                    upper_length = max(len(positive_trials), len(negative_trials))
+                else:
+                    upper_length = replacement_ceiling
+                
+                for set in [positive_trials, negative_trials]:
+                    random.shuffle(set)
+                    
+                    for i, (sub, trial) in enumerate(set):
+                        if i < upper_length:
+                            self.subject_indices[sub].append(len(self.X))
+                            self.X.append(trial)
+                                                
+                    for sub, trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
+                        self.subject_indices[sub].append(len(self.X))
+                        self.X.append(trial)
+                        
+                self.Y.extend([1. for x in range(upper_length)])
+                self.Y.extend([-1. for x in range(upper_length)])
+                
+                if verbose:
+                    self._xy_matrix_tracker()
+                    
+                    
+                    
+        elif downsample_type == 'subject':
+            
+            for subject, [trials, responses] in self.subject_design.items():
+                self.subject_indices[subject] = []
+                
+                subject_positives = []
+                subject_negatives = []
+                
+                for trial, response in zip(trials, responses):
+                    if response > 0:
+                        subject_positives.append(trial)
+                    elif response < 0:
+                        subject_negatives.append(trial)
+                        
+                random.shuffle(subject_positives)
+                random.shuffle(subject_negatives)
+                
+                if min(len(subject_positives), len(subject_negatives)) == 0:
+                    del self.subject_indices[subject]
+                    
+                else:
+                    if not with_replacement:
+                        for i in range(min(len(subject_positives), len(subject_negatives))):
+                            self.subject_indices[subject].append(len(self.X))
+                            self.X.append(subject_positives[i])
+                            self.subject_indices[subject].append(len(self.X))
+                            self.X.append(subject_negatives[i])
+                            self.Y.extend([1.,-1.])
+                            
+                    elif with_replacement:
+                        if not replacement_ceiling:
+                            upper_length = max(len(subject_positives), len(subject_negatives))
+                        else:
+                            upper_length = replacement_ceiling
+                        
+                        for set in [subject_positives, subject_negatives]:
+                            random.shuffle(set)
+                            
+                            for i, trial in enumerate(set):
+                                if i < upper_length:
+                                    self.subject_indices[subject].append(len(self.X))
+                                    self.X.append(trial)
+                                
+                            print upper_length
+                            print len(set)
+                                
+                            for trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
+                                self.subject_indices[subject].append(len(self.X))
+                                self.X.append(trial)
+                                
+                        self.Y.extend([1. for x in range(upper_length)])
+                        self.Y.extend([-1. for x in range(upper_length)])
+                        
+                if verbose:
+                    self._xy_matrix_tracker()
+                    
+        self.X = np.array(self.X)
+        self.Y = np.array(self.Y)
+        
+        
 
 
 
@@ -55,15 +292,16 @@ class CsvData(DataManager):
         
 
 
-    def merge_in_vector_dict(self, subject_vector_dict=None):
+    def merge_in_vector_dict(self, subject_vector_dict=None, bysubject_data_dict=None):
         
-        required_vars = {'subject_vector_dict':subject_vector_dict}
+        required_vars = {'subject_vector_dict':subject_vector_dict,
+                         'bysubject_data_dict':bysubject_data_dict}
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return False
         
         self.bysubject_data_dict = self.csv.merge_csv_dicts(self.bysubject_data_dict,
-                                                           self.subject_vector_dict,
-                                                           keylevel=1)
+                                                            self.subject_vector_dict,
+                                                            keylevel=1)
 
     
     
@@ -83,7 +321,7 @@ class CsvData(DataManager):
         
     def assess_available_variables(self, verbose=True):
         
-        for i, subject in self.bysubject_data_dict:
+        for i, subject in enumerate(self.bysubject_data_dict.keys()):
             if i == 0:
                 self.available_variables.extend(self.bysubject_data_dict[subject].keys())
             else:
@@ -97,12 +335,12 @@ class CsvData(DataManager):
                     self.available_variables.remove(dvar)
                     
         
-    def _find_inds_where(self, datalist, condvals, stringensure=True):
+    def _find_inds_where(self, datalist, condval, stringensure=True):
         if stringensure:
-            condvals = [str(x) for x in condvals]
+            condval = str(condval)
             datalist = [str(x) for x in datalist]
         
-        return [i for i,x in enumerate(datalist) if x in condvals]
+        return [i for i,x in enumerate(datalist) if x is condval]
         
     
     def _slice_conditional_inds(self, indslist):
@@ -116,12 +354,12 @@ class CsvData(DataManager):
         
         self.sparse_data_dict = self.bysubject_data_dict.copy()
         
-        for spvar, spvals in keep_only_where_dict:
+        for spvar, spvals in keep_only_where_dict.items():
             
             if not type(spvals) in (list, tuple):
                 spvals = [spvals]
                 
-            for subject, variables in self.bysubject_data_dict:
+            for subject, variables in self.bysubject_data_dict.items():
                 cinds = []
                 
                 for variable in variables:
@@ -138,49 +376,47 @@ class CsvData(DataManager):
         
         nvars = []
         
-        for cvar, cond in conditionals.items():
-            cinds = self._find_inds_where(self.sparse_data_dict[subject][cvar], conds)
-            suffix = '_'.join([cvar, str(cond)])
-            nvar = [x for i,x in self.sparse_data_dict[subject][variable] if i in cinds]
-            nvars.append([nvar, '_'.join(variable, suffix)])
+        for cvar, conds in conditionals.items():
+            for cond in conds:
+                cinds = self._find_inds_where(self.sparse_data_dict[subject][cvar], cond)
+                suffix = '_'.join([cvar, str(cond)])
+                nvar = [x for i,x in self.sparse_data_dict[subject][variable] if i in cinds]
+                nvars.append([nvar, '_'.join([variable, suffix])])
         
         return nvars
     
     
-    def _delete_unused_vars(self, keep_vars):
+    def _delete_unused_vars(self, subject, keep_vars):
         
-        for subject, vars in self.sparse_data_dict:
-            for var in vars:
-                if var not in keep_vars:
-                    del(self.sparse_data_dict[subject][var])
+        del_vars = []
+        for var in self.sparse_data_dict[subject]:
+            if var not in keep_vars:
+                if var not in del_vars:
+                    del_vars.append(var)
+                        
+        for var in del_vars:
+            del(self.sparse_data_dict[subject][var])
             
     
     
     def create_design(self, independent_dict=None, dependent_dict=None,
-                      logistic_data_dict=None, csv_filepath=None,
-                      keep_only_where=None):
+                      csv_filepath=None):
         
-        required_vars = {'logistic_data_dict':logistic_data_dict,
-                         'independent_vars':independent_dict,
-                         'dependent_var':dependent_dict}
+        required_vars = {'independent_dict':independent_dict,
+                         'dependent_dict':dependent_dict}
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return False
         
         self.subject_design = {}
         self.assess_available_variables()
-        
-        if not keep_only_where:
-            self.sparse_data_dict = self.bysubject_data_dict.copy()
-        else:
-            self.cut_data_dict(keep_only_where)
-            
         self.independent_names = []
         self.dependent_name = []
+        
         
         for subject in self.sparse_data_dict:
             use_vars = []
             
-            for iv, conds in independent_dict.items():
+            for iv, conds in self.independent_dict.items():
                 if not conds:
                     use_vars.append([self.sparse_data_dict[subject][iv], iv])
                 else:
@@ -189,18 +425,22 @@ class CsvData(DataManager):
             if not self.independent_names:
                 self.independent_names = [x[1] for x in use_vars]
                 
-            for dv, conds in dependent_dict.items():
+            for dv, conds in self.dependent_dict.items():
                 if not conds:
                     use_vars.append([self.sparse_data_dict[subject][dv], dv])
                 else:
                     use_vars.extend(self._get_vars_by_conds(subject, dv, conds))
                     
-            if not self.dependent_names:
-                self.dependent_name = [x[1] for x in use_vars if x not in self.independent_names]
+            if not self.dependent_name:
+                self.dependent_name = [x[1] for x in use_vars if x[1] not in self.independent_names]
                     
-            self._delete_unused_vars([x[1] for x in use_vars])
+            print self.independent_names
+            print self.dependent_name
+
+            self._delete_unused_vars(subject, [x[1] for x in use_vars])
             for [varlist, varname] in use_vars:
                 self.sparse_data_dict[subject][varname] = varlist
+                
                 
         if csv_filepath:
             self.write_csv_data(csv_filepath, self.sparse_data_dict)
@@ -209,7 +449,7 @@ class CsvData(DataManager):
         self.independent_names = sorted(self.independent_names)
         self.dependent_name = sorted(self.dependent_name)
         
-        for subject, variables in self.sparse_data_dict:
+        for subject, variables in self.sparse_data_dict.items():
             varlen = np.unique([len(x) for x in self.sparse_data_dict[subject].values()])
             
             if len(varlen) == 1:
@@ -530,237 +770,7 @@ class BrainData(DataManager):
             self.raw_affine = np.load(affine_file)
             
                     
-            
 
-        
-
-class DataManager(Process):
-    
-    def __init__(self, variable_dict=None):
-        super(DataManager, self).__init__(variable_dict=variable_dict)
-        self.nifti = NiftiTools()
-        
-            
-            
-    def recode_variable(self, var_list, oldnew_valdict, allow_unspecified=True,
-                        as_string=False):
-        
-        recoded = []
-        for var in var_list:
-            if var in oldnew_valdict.keys():
-                nval = oldnew_valdict[var]
-                if as_string:
-                    recoded.append(str(nval))
-                else:
-                    recoded.append(float(nval))
-            else:
-                if allow_unspecified:
-                    if as_string:
-                        recoded.append(string(var))
-                    else:
-                        recoded.append(float(var))
-                else:
-                    print 'variable not found in replacement dict'
-                    return False
-                
-        if as_string:
-            return recoded
-        else:
-            return np.array(recoded)
-                
-                      
-        
-    def _xy_matrix_tracker(self):
-        print 'X (trials) length: ', len(self.X)
-        print 'Y (responses) length: ', len(self.Y)
-        print 'positive responses: ', self.Y.count(1)
-        print 'negative responses: ', self.Y.count(-1)
-        
-        
-        
-    def create_XY_matrices(self, subject_design=None, downsample_type=None, with_replacement=False,
-                           replacement_ceiling=None, random_seed=None, Ybinary=[1.,-1.], verbose=True):
-        
-        
-        required_vars = {'subject_design':subject_design}
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return False
-        
-        
-        self.random_seed = random_seed or getattr(self,'random_seed',None)
-        
-        
-        if self.random_seed:
-            np.random.seed(self.random_seed)
-            random.seed(self.random_seed)
-            
-            
-        self.X = []
-        self.Y = []
-        self.subject_indices = {}
-        
-        
-        if not downsample_type:
-            
-            for subject, [trials, responses] in self.subject_design.items():
-                self.subject_indices[subject] = []
-                
-                if not with_replacement:
-                    for trial, response in zip(trials, responses):
-                        self.subject_indices[subject].append(len(self.X))
-                        self.X.append(trial)
-                        self.Y.append(response)
-                        
-                elif with_replacement:
-                    positive_trials = []
-                    negative_trials = []
-                    
-                    for trial, response in zip(trials, responses):
-                        if response > 0:
-                            positive_trials.append(trial)
-                        elif response < 0:
-                            negative_trials.append(trial)
-                    
-                    if not replacement_ceiling:
-                        upper_length = max(len(positive_trials), len(negative_trials))
-                    else:
-                        upper_length = replacement_ceiling
-                    
-                    for set in [positive_trials, negative_trials]:
-                        random.shuffle(set)
-                        
-                        for i, trial in enumerate(set):
-                            if i < upper_length:
-                                self.subject_indices[subject].append(len(self.X))
-                                self.X.append(trial)
-                            
-                        for rep_trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                            self.subject_indices[subject].append(len(self.X))
-                            self.X.append(rep_trial)
-                            
-                    self.Y.extend([1. for x in range(upper_length)])
-                    self.Y.extend([-1. for x in range(upper_length)])
-        
-                if verbose:
-                    self._xy_matrix_tracker()
-                    
-                    
-                    
-        elif downsample_type == 'group':
-            
-            positive_trials = []
-            negative_trials = []
-            
-            for subject, [trials, responses] in self.subject_design.items():
-                self.subject_indices[subject] = []
-                
-                for trial, response, in zip(trials, responses):
-                    if response > 0:
-                        positive_trials.append([subject,trial])
-                    elif response < 0:
-                        negative_trials.append([subject,trial])
-                        
-            random.shuffle(positive_trials)
-            random.shuffle(negative_trials)
-            
-            if not with_replacement:
-                for i in range(min(len(positive_trials), len(negative_trials))):
-                    [psub, ptrial] = positive_trials[i]
-                    [nsub, ntrial] = negative_trials[i]
-                    self.subject_indices[psub].append(len(self.X))
-                    self.X.append(ptrial)
-                    self.subject_indices[nsub].append(len(self.X))
-                    self.X.append(ntrial)
-                    self.Y.extend([1.,-1.])
-                    
-                if verbose:
-                    self._xy_matrix_tracker()
-                    
-            elif with_replacement:
-                
-                if not replacement_ceiling:
-                    upper_length = max(len(positive_trials), len(negative_trials))
-                else:
-                    upper_length = replacement_ceiling
-                
-                for set in [positive_trials, negative_trials]:
-                    random.shuffle(set)
-                    
-                    for i, (sub, trial) in enumerate(set):
-                        if i < upper_length:
-                            self.subject_indices[sub].append(len(self.X))
-                            self.X.append(trial)
-                                                
-                    for sub, trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                        self.subject_indices[sub].append(len(self.X))
-                        self.X.append(trial)
-                        
-                self.Y.extend([1. for x in range(upper_length)])
-                self.Y.extend([-1. for x in range(upper_length)])
-                
-                if verbose:
-                    self._xy_matrix_tracker()
-                    
-                    
-                    
-        elif downsample_type == 'subject':
-            
-            for subject, [trials, responses] in self.subject_design.items():
-                self.subject_indices[subject] = []
-                
-                subject_positives = []
-                subject_negatives = []
-                
-                for trial, response in zip(trials, responses):
-                    if response > 0:
-                        subject_positives.append(trial)
-                    elif response < 0:
-                        subject_negatives.append(trial)
-                        
-                random.shuffle(subject_positives)
-                random.shuffle(subject_negatives)
-                
-                if min(len(subject_positives), len(subject_negatives)) == 0:
-                    del self.subject_indices[subject]
-                    
-                else:
-                    if not with_replacement:
-                        for i in range(min(len(subject_positives), len(subject_negatives))):
-                            self.subject_indices[subject].append(len(self.X))
-                            self.X.append(subject_positives[i])
-                            self.subject_indices[subject].append(len(self.X))
-                            self.X.append(subject_negatives[i])
-                            self.Y.extend([1.,-1.])
-                            
-                    elif with_replacement:
-                        if not replacement_ceiling:
-                            upper_length = max(len(subject_positives), len(subject_negatives))
-                        else:
-                            upper_length = replacement_ceiling
-                        
-                        for set in [subject_positives, subject_negatives]:
-                            random.shuffle(set)
-                            
-                            for i, trial in enumerate(set):
-                                if i < upper_length:
-                                    self.subject_indices[subject].append(len(self.X))
-                                    self.X.append(trial)
-                                
-                            print upper_length
-                            print len(set)
-                                
-                            for trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                                self.subject_indices[subject].append(len(self.X))
-                                self.X.append(trial)
-                                
-                        self.Y.extend([1. for x in range(upper_length)])
-                        self.Y.extend([-1. for x in range(upper_length)])
-                        
-                if verbose:
-                    self._xy_matrix_tracker()
-                    
-        self.X = np.array(self.X)
-        self.Y = np.array(self.Y)
                     
             
         

@@ -322,6 +322,7 @@ class LogisticData(Process):
         if filepath:
             self.write_logistic_data(filepath, self.sparse_data_dict)
                     
+        print independent
         
         for subject in self.sparse_data_dict:
             binY = self.binarize_Y(self.sparse_data_dict[subject][dependent_var])
@@ -336,7 +337,7 @@ class LogisticData(Process):
                     #print self.sparse_data_dict[subject].keys()
                     #print [len(v) for v in self.sparse_data_dict[subject].values()]
                     for var in independent:
-                        #print var, i, len(self.sparse_data_dict[subject][var])
+                        #print subject, var, i, len(self.sparse_data_dict[subject][var])
                         xrow.append(self.sparse_data_dict[subject][var][i])
                     Xmatrix.append(xrow)
             else:
