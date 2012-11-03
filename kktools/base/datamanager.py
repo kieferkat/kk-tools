@@ -337,10 +337,14 @@ class CsvData(DataManager):
         
     def _find_inds_where(self, datalist, condval, stringensure=True):
         if stringensure:
-            condval = str(condval)
+            if type(condval) in (list, tuple):
+                condval = [str(x) for x in condval]
+            else:
+                condval = [str(condval)]
             datalist = [str(x) for x in datalist]
         
-        return [i for i,x in enumerate(datalist) if x is condval]
+        out = [i for i,x in enumerate(datalist) if x in condval]
+        return out
         
     
     def _slice_conditional_inds(self, indslist):
@@ -368,9 +372,10 @@ class CsvData(DataManager):
                         
                 basis_inds = self._slice_conditional_inds(cinds)
                 
+                
                 for v in variables:
                     self.sparse_data_dict[subject][v] = [x for i,x in enumerate(self.sparse_data_dict[subject][v]) if i in basis_inds]
-            
+                    
     
     def _get_vars_by_conds(self, subject, variable, conditionals):
         
@@ -380,7 +385,7 @@ class CsvData(DataManager):
             for cond in conds:
                 cinds = self._find_inds_where(self.sparse_data_dict[subject][cvar], cond)
                 suffix = '_'.join([cvar, str(cond)])
-                nvar = [x for i,x in self.sparse_data_dict[subject][variable] if i in cinds]
+                nvar = [x for i,x in enumerate(self.sparse_data_dict[subject][variable]) if i in cinds]
                 nvars.append([nvar, '_'.join([variable, suffix])])
         
         return nvars
