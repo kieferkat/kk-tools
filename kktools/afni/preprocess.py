@@ -5,6 +5,7 @@ import shutil
 import glob
 
 from ..base.process import Process
+from ..afni.functions import AfniWrapper
 from ..base.scriptwriter import Scriptwriter
 from ..utilities.cleaners import glob_remove
 from ..defaults.lab_standard import preprocessing as preprocessing_defaults
@@ -17,6 +18,7 @@ class Preprocessor(Process):
         self._apply_defaults(preprocessing_defaults)
         self.script_name = 'preprocess'
         self.scriptwriter = Scriptwriter()
+        self.afni = AfniWrapper()
         
         
     def _update_dset(self, suffix):
@@ -40,10 +42,8 @@ class Preprocessor(Process):
         nifti_path = os.path.join(subject_dir, nifti_name)
         anat_path = os.path.join(subject_dir, self.anatomical_name)
         
-        glob_remove(anat_path, suffix='+orig*')
+        self.afni.copy3d(nifti_path, anat_path)
         
-        cmd = ['3dcopy', nifti_path, anat_path]
-        subprocess.call(cmd)
             
             
     
@@ -60,6 +60,7 @@ class Preprocessor(Process):
                                         vars=write_vars, clean=clean)
         
         
+        
     def cutoff_buffer(self, subject_dir, nifti_name, nifti_trs, leadin=None,
                       leadout=None, prefix='epi'):
         
@@ -70,10 +71,8 @@ class Preprocessor(Process):
         nifti_path = os.path.join(subject_dir, nifti_name)
         epi_path = os.path.join(subject_dir, prefix)
         
-        glob_remove(epi_path, suffix='+orig*')
-        nifti_cut = nifti_path+'['+str(self.leadin)+'..'+str(nifti_trs-self.leadout-1)+']'
-        cmd = ['3dTcat', '-prefix', epi_path, nifti_cut]
-        subprocess.call(cmd)
+        self.afni.tcatbuffer(nifti_path, epi_path, self.leadin, nifti_trs-self.leadout)
+        
             
     
     
@@ -104,8 +103,8 @@ class Preprocessor(Process):
         if not self._check_variables(required_vars): return False
         
         epi_path = os.path.join(subject_dir, epi_name)
-        cmd = ['3drefit', '-TR', str(self.tr_length), epi_path]
-        subprocess.call(cmd)
+        self.afni.refit(epi_path, self.tr_length)
+        
         
         
         
@@ -133,11 +132,11 @@ class Preprocessor(Process):
         
         epi_path = os.path.join(subject_dir, epi_name)
         tshift_path = os.path.join(subject_dir, prefix)
-        glob_remove(tshift_path, suffix='+orig*')
         
-        cmd = ['3dTshift', '-slice', str(self.tshift_slice), '-tpattern',
-               self.tpattern, '-prefix', tshift_path, epi_path]
-        subprocess.call(cmd)
+        self.afni.tshift(epi_path+'+orig', tshift_path, self.tshift_slice,
+                         self.tpattern)
+        
+        
         
         
     def write_tshift(self, iter=None, tshift_slice=None, tpattern=None,
@@ -165,13 +164,9 @@ class Preprocessor(Process):
         
         epi_paths = [os.path.join(subject_dir, epi) for epi in epi_names]
         functional_path = os.path.join(subject_dir, self.functional_name)
-        glob_remove(functional_path, suffix='+orig*')
         
-        cmd = ['3dTcat','-prefix', functional_path].extend(epi_paths)
-        subprocess.call(cmd)
+        self.afni.tcatdsets(epi_paths, functional_path)
         
-        for epi in epi_paths:
-            glob_remove(epi, suffix='*')
             
             
     
@@ -207,12 +202,8 @@ class Preprocessor(Process):
         motion_path = os.path.join(subject_dir, self.motionfile_name)
         mfunc_path = os.path.join(subject_dir, self.current_functional)
         
-        glob_remove(motion_path)
-        glob_remove(mfunc_path, suffix='+orig*')
+        self.afni.volreg(prior_path, mfunc_path, motion_path, self.volreg_base)
         
-        cmd = ['3dvolreg', '-Fourier', '-twopass', '-prefix', mfunc_path,
-               '-base', str(self.volreg_base), '-dfile', motion_path, prior_path]
-        subprocess.call(cmd)
         
         
     
@@ -247,11 +238,8 @@ class Preprocessor(Process):
         prior_path = os.path.join(subject_dir, self.prior_functional+'+orig')
         blur_path = os.path.join(subject_dir, self.current_functional)
         
-        glob_remove(blur_path, suffix='+orig*')
+        self.afni.smooth(prior_path, blur_path, self.blur_kernel)
         
-        cmd = ['3dmerge', '-prefix', blur_path, '-1blur_fwhm', str(self.blur_kernel),
-               '-doall', prior_path]
-        subprocess.call(cmd)
         
         
     
@@ -282,20 +270,8 @@ class Preprocessor(Process):
         ave_path = os.path.join(subject_dir, self.prior_functional+ave_suffix)
         norm_path = os.path.join(subject_dir, self.current_functional)
         
-        glob_remove(norm_path, suffix='+orig*')
-        glob_remove(ave_path, suffix='+orig*')
+        self.afni.normalize(prior_path, ave_path, norm_path, functional_trs)
         
-        prior_trrange = prior_path+'[0..'+str(functional_trs)+']'
-        tstat = ['3dTstat', '-prefix', ave_path, prior_trrange]
-        subprocess.call(tstat)
-        
-        refit = ['3drefit', '-abuc', ave_path+'+orig']
-        subprocess.call(refit)
-        
-        calc = ['3dcalc', '-datum', 'float', '-a', prior_trrange, '-b',
-                ave_path, '-expr', self.normalize_expression, '-prefix',
-                norm_path]
-        subprocess.call(calc)
         
         
     def write_normalize(self, functional_trs=None, prior_functional=None,
@@ -343,11 +319,8 @@ class Preprocessor(Process):
         prior_path = os.path.join(subject_dir, self.prior_functional+'+orig')
         filter_path = os.path.join(subject_dir, self.current_functional)
         
-        glob_remove(filter_path, suffix='+orig*')
+        self.afni.highpassfilter(prior_path, filter_path, self.highpass_value)
         
-        cmd = ['3dFourier', '-prefix', filter_path, '-highpass',
-               str(self.highpass_value), prior_path]
-        subprocess.call(cmd)
         
         
         
@@ -381,13 +354,8 @@ class Preprocessor(Process):
 
         anat_path = os.path.join(subject_dir, self.anatomical_name+'+orig')
         func_path = os.path.join(subject_dir, self.current_functional+'+orig')        
-                
-        tlrc = ['@auto_tlrc', '-warp_orig_vol', '-suffix', 'NONE', '-base',
-                self.tt_n27_path, '-input', ]
-        subprocess.call(tlrc)
         
-        refit = ['3drefit', '-apar', anat_path, func_path]
-        subprocess.call(refit)
+        self.afni.talairachwarp(func_path, anat_path, self.tt_n27_path)
         
         
         
