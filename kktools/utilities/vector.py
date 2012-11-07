@@ -78,6 +78,22 @@ def subject_vector_dict(subject_dirs, vector_dir, glob_prefix='*.tc',
 def replace(vector, oldvalue, newvalue):
     return [x if not x == oldvalue else newvalue for x in vector]
     
+
+def zero_forward(vector, forward_amount):
+    new_vec = []
+    count = 0
+    for val in vector:
+        if count == 0:
+            if float(val) != 0:
+                count = forward_amount
+                new_vec.append(val)
+            else:
+                new_vec.append(val)
+        else:
+            new_vec.append('0')
+            count -= count
+    return new_vec
+    
     
     
 def replace_at_interval(vector, newvalue, interval, start=0):

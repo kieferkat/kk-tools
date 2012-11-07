@@ -17,14 +17,14 @@ from threshold import threshold_by_pvalue, threshold_by_rawrange
 class ScikitsSVM(CVObject):
     
     def __init__(self, data_obj=None, variable_dict=None, folds=None):
-        super(CVObject, self).__init__(variable_dict=variable_dict, data_obj=data_obj)
+        super(ScikitsSVM, self).__init__(variable_dict=variable_dict, data_obj=data_obj)
         self.set_folds(folds)
         self.nifti = NiftiTools()
         
         self.X = getattr(self.data, 'X', None)
         self.Y = getattr(self.data, 'Y', None)
-        if self.Y:
-            self.replace_Y_negative_ones()
+        #if self.Y:
+        #    self.replace_Y_negative_ones()
         self.subject_indices = getattr(self.data, 'subject_indices', None)
         
             
@@ -86,6 +86,10 @@ class ScikitsSVM(CVObject):
         
     def output_maps(self, nifti_filepath, threshold=0.01, two_tail=True,
                     threshold_type='pvalue'):
+        
+        if not nifti_filepath.endswith('.nii'):
+            nifti_filepath = nifti_filepath+'.nii'
+        
         print 'Normalizing X matrix...'
         Xnorm = simple_normalize(self.X)
         print 'Classifying with linear svm...'
@@ -103,9 +107,9 @@ class ScikitsSVM(CVObject):
                                          self.data.raw_affine, nifti_filepath)
         
         self.nifti.convert_to_afni(nifti_filepath, nifti_filepath[:-4])
-        self.nifti.adwarp_to_template_talairach(nifti_filepath[:-4]+'+orig', None,
+        self.nifti.adwarp_to_template_talairach(nifti_filepath[:-4]+'+orig', nifti_filepath[:-4]+'+orig',
                                                 self.data.talairach_template_path,
-                                                self.data.dxyz, overwrite=True)
+                                                self.data.dxyz)
     
     
                 

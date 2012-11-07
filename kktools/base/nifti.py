@@ -5,24 +5,18 @@ import subprocess
 import os
 import shutil
 from ..utilities.cleaners import glob_remove
-
+from ..afni.functions import AfniWrapper
 
 class NiftiTools(object):
     
     
     def __init__(self):
         super(NiftiTools, self).__init__()
+        self.afni = AfniWrapper()
         
         
-    def adwarp_to_template_talairach(self, dataset_in, dataset_out, talairach_path, dxyz,
-                                     overwrite=False):
-        if not overwrite:
-            glob_remove(dataset_out)
-            subprocess.call(['adwarp', '-apar', talairach_path, '-dpar', dataset_in,
-                             '-dxyz', str(dxyz), '-prefix', dataset_out])
-        else:
-            subprocess.call(['adwarp','-apar',talairach_path,'-dpar',dataset_in,
-                             '-dxyz', str(dxyz)])
+    def adwarp_to_template_talairach(self, input_path, output_path_prefix, talairach_path, dxyz=1.):
+        self.afni.adwarp(talairach_path, input_path, output_path_prefix, dxyz=dxyz)
                 
         
     def convert_to_nifti(self, dataset_in, dataset_out):
@@ -52,6 +46,10 @@ class NiftiTools(object):
                          '-dxyz', str(dxyz), '-prefix', dataset_out])
         
         
+    def create_mask(self, mask_dset_path, output_prefix_path, clfrac=.3):
+        self.afni.automask(mask_dset_path, output_prefix_path, clfrac=clfrac)
+        
+        
     def create_talairach_niftis(self, subject_dirs, functional_name, anatomical_name,
                                 dxyz, talairach_path, output_name, within_subject_warp=True,
                                 to_template_warp=True):
@@ -66,21 +64,21 @@ class NiftiTools(object):
             anatomical = os.path.join(s, anatomical_name)
             
             # refit the functional to the anatomical:
-            self.refit(functional, anatomical)
+            self.afni.refit_apar(anatomical+'+tlrc', functional+'+orig')
+            #self.refit(functional, anatomical)
                         
             # adwarp the functional to the anatomical
             if within_subject_warp:
                 adwarp_temp = os.path.join(s, 'temp_adwarp_func')
-                self.adwarp_to_subject_talairach(functional, adwarp_temp, anatomical,
-                                                 dxyz)
+                self.afni.adwarp(anatomical+'+tlrc', functional+'+orig', adwarp_temp, dxyz=dxyz)
             else:
                 adwarp_temp = functional
             
             # warp the warped functional to the talairach template:
             if to_template_warp:
                 template_temp = os.path.join(s, 'temp_template_func')
-                self.adwarp_to_template_talairach(adwarp_temp+'+tlrc', template_temp, talairach_path,
-                                                  dxyz)
+                self.afni.adwarp(talairach_path, adwarp_temp+'+tlrc', template_temp, dxyz=dxyz,
+                                 force=True)
             else:
                 template_temp = adwarp_temp
                 

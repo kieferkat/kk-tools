@@ -17,7 +17,9 @@ class AfniFunction(object):
         
     
     def _clean_remove(self, files):
+        print files
         for file in files:
+            print file
             try:
                 os.remove(file)
             except:
@@ -46,6 +48,9 @@ class AfniFunction(object):
             self._clean_remove(glob.glob(prefix+'+orig*'))
 
         elif clean_type is 'tlrc':
+            print 'cleaning tlrc'
+            print prefix
+            print glob.glob(prefix+'+tlrc')
             self._clean_remove(glob.glob(prefix+'+tlrc*'))
             
         elif clean_type is 'afni':
@@ -138,6 +143,28 @@ class Refit(AfniFunction):
                                             vars=write_vars)    
         else:
             scriptwriter.write_line(line=write_cmd, vars=write_vars)
+            
+            
+class RefittoParent(AfniFunction):
+    
+    def __init__(self):
+        super(RefittoParent, self).__init__()
+        
+        
+    def __call__(self, apar_path, dpar_path):
+        
+        input_path = self._check_afni_suffix(dpar_path)
+        cmd = ['3dRefit', '-apar', apar_path, dpar_path]
+        subprocess.call(cmd)
+        
+        
+    def write(self, scriptwriter, apar, dpar):
+        header = 'Refit dataset to anatomical parent:'
+        write_cmd = ['3drefit -apar ${refit_apar} ${refit_dpar}+orig.']
+        write_vars = {'refit_apar':apar, 'refit_dpar':dpar}
+        
+        scriptwriter.write_section(header=header, cmd=write_cmd, vars=write_vars)    
+            
         
         
         
@@ -388,8 +415,82 @@ class TalairachWarp(AfniFunction):
         refit_vars = {'anatomical_name':anatomical,
                       'prior_functional':functional}
 
+
+class Adwarp(AfniFunction):
     
+    def __init__(self):
+        super(Adwarp, self).__init__()
+        
+        
+    def __call__(self, apar_path, dpar_path, output_path_prefix, dxyz=1.,
+                 adwarp_type='tlrc', force=False):
+        
+        self._clean(output_path_prefix, clean_type=adwarp_type)
+        if not force:
+            cmd = ['adwarp', '-apar', apar_path, '-dpar', dpar_path,
+                   '-dxyz', str(dxyz), '-prefix', output_path_prefix]
+        else:
+            cmd = ['adwarp', '-apar', apar_path, '-dpar', dpar_path,
+                   '-dxyz', str(dxyz), '-force', '-prefix', output_path_prefix]
+        subprocess.call(cmd)
+        
+        
+    def write(self, scriptwriter, apar, dpar, output_prefix, dxyz=1., force=False):
+        
+        header = 'Adwarp dataset:'
+        clean = {'afni_tlrc':{'adwarp_output':output_prefix}}
+        if not force:
+            adwarp_cmd = ['adwarp -apar ${apar_dset} -dpar ${dpar_dset} -dxyz ${adwarp_dxyz} -prefix ${adwarp_output}']
+        else:
+            adwarp_cmd = ['adwarp -force -apar ${apar_dset} -dpar ${dpar_dset} -dxyz ${adwarp_dxyz} -prefix ${adwarp_output}']
+        adwarp_vars = {'apar_dset':apar, 'dpar_dset': dpar,
+                       'adwarp_dxyz':str(dxyz), 'adwarp_output':output_prefix}
+        
+        scriptwriter.write_section(header=header, clean=clean, cmd=adwarp_cmd,
+                                   vars=adwarp_vars)
+        
+        
+class Automask(AfniFunction):
     
+    def __init__(self):
+        super(Automask, self).__init__()
+        
+        
+    def __call__(self, mask_dset_path, output_path_prefix, clfrac=.3,
+                 dset_type='tlrc'):
+        
+        self._clean(output_path_prefix, clean_type=dset_type)
+        cmd = ['3dAutomask','-prefix',output_path_prefix, '-clfrac',
+               str(clfrac), mask_dset_path]
+        subprocess.call(cmd)
+        
+        
+    
+
+class AfnitoNifti(AfniFunction):
+    
+    def __init__(self):
+        super(AfnitoNifti, self).__init__()
+        
+        
+    def __call__(self, input_path, output_path_prefix):
+        
+        self._clean(output_path_prefix+'.nii')
+        cmd = ['3dAFNItoNIFTI', '-prefix', output_path_prefix, input_path]
+        subprocess.call(cmd)
+        
+        
+    def write(self, scriptwriter, input, output_prefix):
+        
+        header = 'Convert Afni file to Nifti:'
+        clean = {'standard':{'nifti_output':output_prefix+'.nii'}}
+        a2n_cmd = ['3dAFNItoNIFTI -prefix ${nifti_output} ${afni_input}']
+        a2n_vars = {'nifti_output':output_prefix, 'afni_input':input}
+        
+        scriptwriter.write_section(header=header, clean=clean, cmd=a2n_cmd,
+                                   vars=a2n_vars)
+
+
     
 class MaskAve(AfniFunction):
     
@@ -499,6 +600,12 @@ class MaskDump(AfniFunction):
             
             self.run(dataset_path, anat_path, mask_paths, mask_area_strs=mask_area_strs,
                      mask_area_codes=mask_area_codes)
+            
+            
+
+
+        
+        
         
         
     
@@ -518,8 +625,10 @@ class AfniWrapper(Process):
         self.tcatbuffer = TcatBuffer()
         self.tshift = Tshift()
         self.refit = Refit()
+        self.refit_apar = RefittoParent()
         self.copy3d = Copy3d()
-        
-        
+        self.adwarp = Adwarp()
+        self.automask = Automask()
+        self.afnitonifti = AfnitoNifti()
         
     

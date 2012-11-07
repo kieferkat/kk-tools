@@ -20,11 +20,6 @@ class Regression(CVObject):
         self.Y = getattr(self.data, 'Y', None)
         
             
-        
-    
-    
-
-
 
 class LogisticRegression(Regression):
     
@@ -36,6 +31,26 @@ class LogisticRegression(Regression):
         if self.Y is not None:
             self.replace_Y_negative_ones()
             
+        self.fixed_effects_set = False
+        
+        
+    def add_fixed_effects(self):
+        
+        fixed_effects = np.zeros((self.X.shape[0], len(self.subject_indices.keys())))
+        for i, (subject, trial_inds) in enumerate(self.subject_indices.items()):
+            for ind in trial_inds:
+                fixed_effects[ind, i] = 1.
+                
+        print np.sum(fixed_effects, axis=1)
+        print np.shape(fixed_effects)
+        print np.shape(self.X)
+        
+        self.X = np.hstack((fixed_effects, self.X))
+        
+        print np.shape(self.X)
+        
+        
+        
         
         
     def logistic_train(self, X, Y, intercept=True, verbose=True):

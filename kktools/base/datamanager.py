@@ -13,7 +13,7 @@ from process import Process
 from nifti import NiftiTools
 from ..utilities.cleaners import glob_remove
 from ..utilities.csv import CsvTools
-from ..afni.functions import FractionizeMask, MaskAve, MaskDump
+from ..afni.functions import AfniWrapper
 from ..utilities.vector import vecread
 from ..utilities.vector import subject_vector_dict as make_vector_dict
 
@@ -260,7 +260,6 @@ class CsvData(DataManager):
     def __init__(self, variable_dict=None):
         super(CsvData, self).__init__(variable_dict=variable_dict)
         self.csv = CsvTools()
-        self.maskdump = MaskDump(variable_dict=variable_dict)
         self.independent_dict = {}
         self.dependent_dict = {}
         self.bysubject_data_dict = {}
@@ -744,6 +743,8 @@ class BrainData(DataManager):
         
         self.prediction_tr_length = getattr(self, 'prediction_tr_length', None) or len(self.selected_trs)
         
+        
+        
         if suffix is None:
             try:
                 suffix = '_lag'+str(self.lag)+'_trs'+str(self.prediction_tr_length)
@@ -759,7 +760,9 @@ class BrainData(DataManager):
             try:
                 trial_file = os.path.join(self.save_directory, subject+'_trials'+suffix+'.npy')
                 resp_file = os.path.join(self.save_directory, subject+'_respvec'+suffix+'.npy')
-            
+                
+                print trial_file, resp_file
+                
                 trials = np.load(trial_file)
                 responses = np.load(resp_file)
                 
