@@ -60,7 +60,7 @@ class Scriptwriter(object):
             else:
                 if vars:
                     for vname, var in vars.items():
-                        if var:
+                        if var is not None:
                             print vname, var
                             if item.find('${'+vname+'}') != -1:
                                 item = item.replace('${'+vname+'}', str(var))
