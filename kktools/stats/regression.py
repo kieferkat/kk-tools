@@ -32,6 +32,7 @@ class LogisticRegression(Regression):
             self.replace_Y_negative_ones()
             
         self.fixed_effects_set = False
+        self.intercept_set = False
         
         
     def add_fixed_effects(self):
@@ -49,18 +50,24 @@ class LogisticRegression(Regression):
         
         print np.shape(self.X)
         
+        self.fixed_effects_set = True
+
+        
+        
+    def add_intercept(self):
+        
+        print np.shape(self.X)
+        self.X = np.hstack((np.ones(self.X.shape[0]), self.X))
+        self.intercept_set = True
+        print np.shape(self.X)
         
         
         
-        
-    def logistic_train(self, X, Y, intercept=True, verbose=True):
+    def logistic_train(self, X, Y, verbose=True):
         #print X
         #print type(X), type(X[1]), np.dtype(X.dtype), np.dtype(X[1].dtype)
         
         n, p = X.shape
-    
-        if intercept:
-            X = np.hstack((np.ones((n,1)), X))
             
         if verbose:
             print 'Y shape: ', Y.shape
@@ -75,17 +82,21 @@ class LogisticRegression(Regression):
     
     
     
-    def logistic_test(self, X, Y, train_results, intercept=True,
-                      predict_with_intercept=True):
+    def logistic_test(self, X, Y, train_results, predict_with_intercept=True):
         
         training_betas = train_results.params
         
-        if intercept:
-            if predict_with_intercept:
-                n, p = X.shape
-                X = np.hstack((np.ones((n,1)), X))
-            else:
+        # please add fixed effects BEFORE intercept, for now! 
+        if self.fixed_effects_set:
+            training_betas = training_betas[len(self.subject_indices.keys()):]
+            X = np.hsplit((X, len(self.subject_indices.keys())))
+        
+        
+        if self.intercept_set:
+            if not predict_with_intercept:
+                X = np.hsplit((X, 1))
                 training_betas = training_betas[1:]
+                
         
         test_eta = np.dot(X, training_betas)
         test_p = np.exp(test_eta) / (1. + np.exp(test_eta))
