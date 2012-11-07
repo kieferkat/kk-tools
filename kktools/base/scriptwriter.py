@@ -61,8 +61,9 @@ class Scriptwriter(object):
                 if vars:
                     for vname, var in vars.items():
                         if var:
+                            print vname, var
                             if item.find('${'+vname+'}') != -1:
-                                item = item.replace('${'+vname+'}', var)
+                                item = item.replace('${'+vname+'}', str(var))
                         else:
                             if vname not in self.unset_variables:
                                 self.unset_variables.append(vname)

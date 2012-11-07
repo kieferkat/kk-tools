@@ -3,7 +3,7 @@ import pylab, pandas
 import statsmodels.api
 import numpy as np
 from pprint import pprint
-from ..data.crossvalidation import CVObject
+from ..base.crossvalidation import CVObject
 from ..utilities.csv import CsvTools
 
 

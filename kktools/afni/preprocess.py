@@ -19,6 +19,9 @@ class Preprocessor(Process):
         self.script_name = 'preprocess'
         self.scriptwriter = Scriptwriter()
         self.afni = AfniWrapper()
+        self.run_script = True
+        self.write_script = True
+        
         
         
     def _update_dset(self, suffix):
@@ -31,38 +34,30 @@ class Preprocessor(Process):
         else:
             self.prior_functional = self.current_functional
             self.current_functional = self.current_functional+suffix
+            
     
     
     def convert_anatomical(self, subject_dir, nifti_name, anatomical_name=None):
 
         required_vars = {'anatomical_name':anatomical_name}
         self._assign_variables(required_vars)
-        if not self._check_variables(requried_vars): return False
+        if not self._check_variables(required_vars): return False
         
+        print nifti_name, subject_dir
         nifti_path = os.path.join(subject_dir, nifti_name)
         anat_path = os.path.join(subject_dir, self.anatomical_name)
         
-        self.afni.copy3d(nifti_path, anat_path)
+        if self.run_script:
+            self.afni.copy3d(nifti_path, anat_path)
         
+        if self.write_script:
+            self.afni.copy3d.write(self.scriptwriter, nifti_name, self.anatomical_name)
             
-            
-    
-    def write_convert_anatomical(self, anatomical_nifti=None, anatomical_name=None):
-        
-        write_cmd = ['3dcopy ${anatomical_nifti} ${anatomical_name}']
-        write_vars = {'anatomical_nifti':anatomical_nifti,
-                       'anatomical_name':anatomical_name}
-        
-        clean = {'afni':{'anatomical_name':anatomical_name}}
-        header = 'Convert anatomical'
-
-        self.scriptwriter.write_section(header=header, cmd=write_cmd,
-                                        vars=write_vars, clean=clean)
         
         
         
     def cutoff_buffer(self, subject_dir, nifti_name, nifti_trs, leadin=None,
-                      leadout=None, prefix='epi'):
+                      leadout=None, prefix='epi', write_cmd_only=False):
         
         required_vars = {'leadin':leadin, 'leadout':leadout}
         self._assign_variables(required_vars)
@@ -71,60 +66,35 @@ class Preprocessor(Process):
         nifti_path = os.path.join(subject_dir, nifti_name)
         epi_path = os.path.join(subject_dir, prefix)
         
-        self.afni.tcatbuffer(nifti_path, epi_path, self.leadin, nifti_trs-self.leadout)
+        if self.run_script:
+            self.afni.tcatbuffer(nifti_path, epi_path, self.leadin, nifti_trs-self.leadout-1)
         
-            
-    
-    
-    def write_cutoff_buffer(self, functional_nifti=None, iter=None,
-                            leadin=None, leadout=None, cmd_only=False):
-        
-        clean = {'afni':{'epi':'epi'}}
-        header = 'Cut off lead-in and lead-out:'
-        
-        write_cmd = ['3dTcat -prefix epi${iter} \'${functional_nifti}[${leadin}..${leadout}]\'']
-        write_vars = {'iter':iter, 'functional_nifti':functional_nifti,
-                      'leadin':leadin, 'leadout':leadout}
-        
-        if not cmd_only:
-            self.scriptwriter.write_section(header=header, cmd=write_cmd,
-                                            vars=write_vars, clean=clean)
-        else:
-            self.scriptwriter.write_line(line=write_cmd, vars=write_vars)
+        if self.write_script:
+            self.afni.tcatbuffer.write(self.scriptwriter, nifti_name, prefix, self.leadin,
+                                       nifti_trs-self.leadout-1, cmd_only=write_cmd_only)
                 
-            
                 
         
         
-    def refit(self, subject_dir, epi_name, tr_length=None):
+    def refit(self, subject_dir, epi_name, tr_length=None, write_cmd_only=False):
         
         required_vars = {'tr_length':tr_length}
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return False
         
         epi_path = os.path.join(subject_dir, epi_name)
-        self.afni.refit(epi_path, self.tr_length)
         
+        if self.run_script:
+            self.afni.refit(epi_path, self.tr_length)
         
-        
-        
-    def write_refit(self, iter=None, tr_length=None, cmd_only=False):
-        
-        
-        header = 'Refit to ensure correct TR length:'
-        write_cmd = ['3drefit -TR ${tr_length} epi${iter}+orig.']
-        write_vars = {'iter':iter, 'tr_length':tr_length}
-        
-        if not cmd_only:
-            self.scriptwriter.write_section(header=header, cmd=write_cmd,
-                                            vars=write_vars)    
-        else:
-            self.scriptwriter.write_line(line=write_cmd, vars=write_vars)
+        if self.write_script:
+            self.afni.refit.write(self.scriptwriter, epi_name, tr_length,
+                                  cmd_only=write_cmd_only)
             
         
         
     def tshift(self, subject_dir, epi_name, tshift_slice=None, tpattern=None,
-               prefix='epits'):
+               prefix='epits', write_cmd_only=False):
         
         required_vars = {'tshift_slice':tshift_slice, 'tpattern':tpattern}
         self._assign_variables(required_vars)
@@ -133,26 +103,15 @@ class Preprocessor(Process):
         epi_path = os.path.join(subject_dir, epi_name)
         tshift_path = os.path.join(subject_dir, prefix)
         
-        self.afni.tshift(epi_path+'+orig', tshift_path, self.tshift_slice,
-                         self.tpattern)
+        if self.run_script:
+            self.afni.tshift(epi_path+'+orig', tshift_path, self.tshift_slice,
+                             self.tpattern)
         
+        if self.write_script:
+            self.afni.tshift.write(self.scriptwriter, epi_name, prefix,
+                                   self.tshift_slice, self.tpattern,
+                                   cmd_only=write_cmd_only)
         
-        
-        
-    def write_tshift(self, iter=None, tshift_slice=None, tpattern=None,
-                     cmd_only=False):
-        
-        clean = {'afni':{'epits':'epits'}}
-        header = 'Time slice correction:'
-        write_cmd = ['3dTshift -slice ${tshift_slice} -tpattern ${tpattern} -prefix epits${iter}+orig.']
-        write_vars = {'iter':iter, 'tshift_slice':tshift_slice,
-                       'tpattern':tpattern}
-        
-        if not cmd_only:
-            self.scriptwriter.write_section(header=header, cmd=write_cmd,
-                                            vars=write_vars, clean=clean)
-        else:
-            self.scriptwriter.write_line(line=write_cmd, vars=write_vars)
                  
         
         
@@ -165,25 +124,13 @@ class Preprocessor(Process):
         epi_paths = [os.path.join(subject_dir, epi) for epi in epi_names]
         functional_path = os.path.join(subject_dir, self.functional_name)
         
-        self.afni.tcatdsets(epi_paths, functional_path)
+        if self.run_script:
+            self.afni.tcatdsets(epi_paths, functional_path)
         
+        if self.write_script:
+            self.afni.tcatdsets.write(self.scriptwriter, epi_names,
+                                      self.functional_name)
             
-            
-    
-    def write_concatenate(self, epi_names=None, functional_name=None):
-        
-        header = 'Concatenate epis into functional dataset:'
-        clean = {'afni':{'functional_name':functional_name}}
-        write_cmd = ['3dTcat -prefix ${functional_name} ${epi_names}']
-        if epi_names:
-            epi_names = [x.rstrip('+orig.') for x in epi_names if x.startswith('+orig')
-                         or x.startswith('+orig.')]
-            epi_names = ' '.join([x+'+orig' for x in epi_names])
-        write_vars = {'epi_names':epi_names, 'functional_name':functional_name}
-        
-        self.scriptwriter.write_section(header=header, cmd=write_cmd,
-                                        vars=write_vars, clean=clean)
-    
     
             
             
@@ -202,27 +149,14 @@ class Preprocessor(Process):
         motion_path = os.path.join(subject_dir, self.motionfile_name)
         mfunc_path = os.path.join(subject_dir, self.current_functional)
         
-        self.afni.volreg(prior_path, mfunc_path, motion_path, self.volreg_base)
+        if self.run_script:
+            self.afni.volreg(prior_path, mfunc_path, motion_path, self.volreg_base)
         
-        
-        
-    
-    def write_volreg(self, motionfile_name=None, prior_functional=None,
-                     volreg_base=None, suffix='_m'):
-        
-        header = 'Motion correction:'
-        clean = {'afni':{'dataset':(prior_functional or 'prior_functional')+suffix},
-                 'standard':{'motionfile_name':motionfile_name}}
-        write_cmd = ['3dvolreg -Fourier -twopass -prefix ${prior_functional}${suffix} -base ${volreg_base} -dfile ${motionfile_name} ${prior_functional}+orig']
-        write_vars = {'prior_functional':prior_functional,
-                       'suffix':suffix, 'volreg_base':volreg_base,
-                       'motionfile_name':motionfile_name}
-        
-        self.scriptwriter.write_section(header=header, cmd=write_cmd, vars=write_vars,
-                                        clean=clean)
-        
-        return (prior_functional or 'prior_functional')+suffix
-    
+        if self.write_script:
+            self.afni.volreg.write(self.scriptwriter, self.prior_functional, suffix,
+                                   self.motionfile_name, self.volreg_base)
+            
+
         
         
     def smooth(self, subject_dir, blur_kernel=None, functional_name=None,
@@ -238,22 +172,13 @@ class Preprocessor(Process):
         prior_path = os.path.join(subject_dir, self.prior_functional+'+orig')
         blur_path = os.path.join(subject_dir, self.current_functional)
         
-        self.afni.smooth(prior_path, blur_path, self.blur_kernel)
+        if self.run_script:
+            self.afni.smooth(prior_path, blur_path, self.blur_kernel)
+            
+        if self.write_script:
+            self.afni.smooth.write(self.scriptwriter, self.prior_functional, suffix,
+                                   self.blur_kernel)
         
-        
-        
-    
-    def write_smooth(self, blur_kernel=None, prior_functional=None, suffix='b'):
-        
-        header = 'Blur dataset:'
-        clean = {'afni':{'dataset':(prior_functional or 'prior_functional')+suffix}}
-        write_cmd = ['3dmerge -prefix ${prior_functional}${suffix} -1blur_fwhm ${blur_kernel} -doall ${prior_functional}+orig']
-        write_vars = {'blur_kernel':blur_kernel, 'prior_functional':prior_functional}
-        
-        self.scriptwriter.write_section(header=header, cmd=write_cmd,
-                                        vars=write_vars, clean=clean)
-        
-        return (prior_functional or 'prior_functional')+suffix
         
         
         
@@ -270,39 +195,13 @@ class Preprocessor(Process):
         ave_path = os.path.join(subject_dir, self.prior_functional+ave_suffix)
         norm_path = os.path.join(subject_dir, self.current_functional)
         
-        self.afni.normalize(prior_path, ave_path, norm_path, functional_trs)
+        if self.run_script:
+            self.afni.normalize(prior_path, ave_path, norm_path, functional_trs-1)
         
-        
-        
-    def write_normalize(self, functional_trs=None, prior_functional=None,
-                        normalize_expression='((a-b)/b)*100', suffix='n',
-                        ave_suffix='_ave'):
-        
-        header = 'Normalize dataset:'
-        clean = {'afni':{'dataset':(prior_functional or 'prior_functional')+suffix,
-                         'ave_dataset':(prior_functional or 'prior_functional')+ave_suffix}}
-        
-        tstat_cmd = ['3dTstat -prefix ${prior_functional}${ave_suffix} \'${prior_functional}+orig[0..${functional_trs}]]\'']
-        tstat_vars = {'prior_functional':prior_functional,
-                      'ave_suffix':ave_suffix, 'functional_trs':functional_trs}
-        
-        self.scriptwriter.write_section(header=header, clean=clean,
-                                        cmd=tstat_cmd, vars=tstat_vars)
-        
-        refit_cmd = ['3drefit -abuc ${prior_functional}${ave_suffix}+orig']
-        refit_vars = {'prior_functional':prior_functional,
-                      'ave_suffix':ave_suffix}
-        
-        self.scriptwriter.write_line(line=refit_cmd, vars=refit_vars)
-        
-        calc_cmd = ['3dcalc -datum float -a \'${prior_functional}+orig[0..${functional_trs}]\' -b ${prior_functional}${ave_suffix} -expr \"${normalize_expression}\" -prefix ${prior_functional}${suffix}']
-        calc_vars = {'prior_functional':prior_functional, 'suffix':suffix,
-                     'ave_suffix':ave_suffix, 'functional_trs':functional_trs,
-                     'normalize_expression':normalize_expression}
-        
-        self.scriptwriter.write_line(line=calc_cmd, vars=calc_vars)
-        
-        return (prior_functional or 'prior_functional')+suffix
+        if self.write_script:
+            self.afni.normalize.write(self.scriptwriter, self.prior_functional,
+                                      suffix, ave_suffix, functional_trs,
+                                      self.normalize_expression)
         
         
         
@@ -324,23 +223,6 @@ class Preprocessor(Process):
         
         
         
-    def write_highpass_filter(self, highpass_value=None, prior_functional=None,
-                              suffix='f'):
-        
-        header = 'Fourier highpass filter:'
-        clean = {'afni':{'dataset':(prior_functional or 'prior_functional')+suffix}}
-        write_cmd = ['3dFourier -prefix ${prior_functional}${suffix} -highpass ${highpass_value} ${prior_functional}+orig']
-        write_vars = {'prior_functional':prior_functional, 'suffix':suffix,
-                      'highpass_value':highpass_value}
-        
-        self.scriptwriter.write_section(header=header, clean=clean,
-                                        cmd=write_cmd, vars=write_vars)
-        
-        return (prior_functional or 'prior_functional')+suffix
-        
-        
-        
-        
     def talairach_warp(self, subject_dir, anatomical_name=None, functional_name=None,
                        tt_n27_path=None):
         
@@ -355,40 +237,46 @@ class Preprocessor(Process):
         anat_path = os.path.join(subject_dir, self.anatomical_name+'+orig')
         func_path = os.path.join(subject_dir, self.current_functional+'+orig')        
         
-        self.afni.talairachwarp(func_path, anat_path, self.tt_n27_path)
+        if self.run_script:
+            self.afni.talairachwarp(func_path, anat_path, self.tt_n27_path)
+            
+        if self.write_script:
+            self.afni.talairachwarp.write(self.scriptwriter, self.current_functional,
+                                          self.anatomical_name, self.tt_n27_path)
         
         
         
-    def write_talairach_warp(self, anatomical_name=None, prior_functional=None,
-                             tt_n27_path=None):
+    def write(selfanat_nifti, func_niftis, func_nifti_trs,
+            subject_dirs=None, anatomical_name=None, functional_name=None,
+            leadin=None, leadout=None, tr_length=None, tshift_slice=None,
+            tpattern=None, motionfile_name=None, volreg_base=None, blur_kernel=None,
+            normalize_expression=None, highpass_value=None, tt_n27_path=None):
         
-        header = 'Warp to talairach space:'
-        clean = {'afni_tlrc':{'anatomical':anatomical_name}}
-        tlrc_cmd = ['@auto_tlrc -warp_orig_vol -suffix NONE -base ${tt_n27_path} -input ${anatomical_name}+orig']
-        tlrc_vars = {'anatomical_name':anatomical_name,
-                     'tt_n27_path':tt_n27_path}
+        required_vars = {'anatomical_name':anatomical_name,
+                         'functional_name':functional_name,
+                         'subject_dirs':subject_dirs, 'leadin':leadin,
+                         'leadout':leadout, 'tr_length':tr_length,
+                         'tshift_slice':tshift_slice, 'tpattern':tpattern,
+                         'motionfile_name':motionfile_name, 'volreg_base':volreg_base,
+                         'blur_kernel':blur_kernel,
+                         'normalize_expression':normalize_expression,
+                         'highpass_value':highpass_value, 'tt_n27_path':tt_n27_path}
+        self._assign_variables(required_vars)
+        if not self._check_variables(required_vars): return False
         
-        self.scriptwriter.write_section(header=header, clean=clean,
-                                        cmd=tlrc_cmd, vars=tlrc_vars)
+        self.run_script = False
+        self.write_script = True
         
-        refit_cmd = ['3drefit -apar ${anatomical_name}+orig ${prior_functional}+orig']
-        refit_vars = {'anatomical_name':anatomical_name,
-                      'prior_functional':prior_functional}
-        
-        self.scriptwriter.write_line(line=refit_cmd, vars=refit_vars)
-        
-        
-    def write_script(self):
-        self.write_convert_anatomical()
-        self.write_cutoff_buffer()
-        self.write_refit()
-        self.write_tshift()
-        self.write_concatenate()
-        self.write_volreg()
-        self.write_smooth()
-        self.write_normalize()
-        self.write_highpass_filter()
-        self.write_talairach_warp()
+        self.convert_anatomical()
+        self.cutoff_buffer()
+        self.refit()
+        self.tshift()
+        self.concatenate()
+        self.volreg()
+        self.smooth()
+        self.normalize()
+        self.highpass_filter()
+        self.talairach_warp()
         
         
     

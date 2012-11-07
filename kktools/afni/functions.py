@@ -23,8 +23,17 @@ class AfniFunction(object):
             except:
                 pass
             
+    def _check_afni_suffix(self, path, suffix='orig'):
+        if suffix == 'orig':
+            if not path.endswith('+orig.') and not path.endswith('+orig'):
+                path = path+'+orig.'
+        elif suffix == 'tlrc':
+            if not path.endswith('+tlrc.') and not path.endswith('+tlrc'):
+                path = path+'+tlrc.'
+        return path
+            
     
-    def _clean(self, glob_prefix, clean_clean_type='standard', path=None):
+    def _clean(self, glob_prefix, clean_type='standard', path=None):
         if path:
             prefix = os.path.join(path, glob_prefix)
         else:
@@ -42,6 +51,8 @@ class AfniFunction(object):
         elif clean_type is 'afni':
             self._clean_remove(glob.glob(prefix+'+orig*'))
             self._clean_remove(glob.glob(prefix+'+tlrc*'))
+            
+            
     
     
 class Copy3d(AfniFunction):
@@ -55,6 +66,19 @@ class Copy3d(AfniFunction):
         self._clean(output_path_prefix, clean_type='orig')
         cmd = ['3dcopy', input_path, output_path_prefix]
         subprocess.call(cmd)
+        
+        
+    def write(self, scriptwriter, input, output_prefix):
+        
+        write_cmd = ['3dcopy ${anatomical_nifti} ${anatomical_name}']
+        write_vars = {'anatomical_nifti':input,
+                       'anatomical_name':output_prefix}
+        
+        clean = {'afni':{'anatomical_name':output_prefix}}
+        header = 'Convert anatomical'
+
+        scriptwriter.write_section(header=header, cmd=write_cmd,
+                                   vars=write_vars, clean=clean)
         
         
         
@@ -73,6 +97,23 @@ class TcatBuffer(AfniFunction):
         subprocess.call(cmd)
         
         
+    def write(self, scriptwriter, functional, epi_prefix, leadin,
+              leadout, cmd_only=False):
+        
+        clean = {'afni':{'epi_prefix':epi_prefix}}
+        header = 'Cut off lead-in and lead-out:'
+        
+        write_cmd = ['3dTcat -prefix ${epi_prefix} \'${functional_nifti}[${leadin}..${leadout}]\'']
+        write_vars = {'functional_nifti':functional,
+                      'leadin':leadin, 'leadout':leadout, 'epi_prefix':epi_prefix}
+        
+        if not cmd_only:
+            scriptwriter.write_section(header=header, cmd=write_cmd,
+                                            vars=write_vars, clean=clean)
+        else:
+            scriptwriter.write_line(line=write_cmd, vars=write_vars)
+        
+        
         
 class Refit(AfniFunction):
     
@@ -82,8 +123,21 @@ class Refit(AfniFunction):
         
     def __call__(self, input_path, tr_length):
         
+        input_path = self._check_afni_suffix(input_path)
         cmd = ['3dRefit', '-TR', str(tr_length), input_path]
         subprocess.call(cmd)
+        
+        
+    def write(self, scriptwriter, input, tr_length, cmd_only=False):
+        header = 'Refit to ensure correct TR length:'
+        write_cmd = ['3drefit -TR ${tr_length} ${epi_prefix}+orig.']
+        write_vars = {'epi_prefix':input, 'tr_length':tr_length}
+        
+        if not cmd_only:
+            scriptwriter.write_section(header=header, cmd=write_cmd,
+                                            vars=write_vars)    
+        else:
+            scriptwriter.write_line(line=write_cmd, vars=write_vars)
         
         
         
@@ -99,6 +153,22 @@ class Tshift(AfniFunction):
         cmd = ['3dTshift', '-slice', str(tshift_slice), '-tpattern',
                tpattern, '-prefix', output_path_prefix, input_path]
         subprocess.call(cmd)
+        
+        
+    def write(self, scriptwriter, input, output_prefix, tshift_slice, tpattern,
+              cmd_only=False):
+        
+        clean = {'afni':{'epits':'epits'}}
+        header = 'Time slice correction:'
+        write_cmd = ['3dTshift -slice ${tshift_slice} -tpattern ${tpattern} -prefix ${epits_prefix} ${epi_prefix}+orig.']
+        write_vars = {'epi_prefix':input, 'tshift_slice':tshift_slice,
+                       'tpattern':tpattern, 'epits_prefix':output_prefix}
+        
+        if not cmd_only:
+            scriptwriter.write_section(header=header, cmd=write_cmd,
+                                       vars=write_vars, clean=clean)
+        else:
+            scriptwriter.write_line(line=write_cmd, vars=write_vars)
         
         
         
@@ -118,6 +188,24 @@ class TcatDatasets(AfniFunction):
             for ip in input_paths:
                 self._clean(ip, clean_type='orig')
                 
+                
+    def write(self, scriptwriter, inputs, output_prefix):
+        
+        header = 'Concatenate epis into functional dataset:'
+        clean = {'afni':{'functional_name':output_prefix}}
+        write_cmd = ['3dTcat -prefix ${functional_name} ${epi_names}']
+        if type(inputs) not in (list, tuple):
+            inputs = [inputs]
+            
+        inputs = [x.rstrip('+orig.') for x in inputs if x.startswith('+orig')
+                  or x.startswith('+orig.')]
+        inputs = ' '.join([x+'+orig' for x in inputs])
+        write_vars = {'epi_names':inputs, 'functional_name':output_prefix}
+        
+        scriptwriter.write_section(header=header, cmd=write_cmd,
+                                        vars=write_vars, clean=clean)
+                
+                
 
 class Volreg(AfniFunction):
     
@@ -134,7 +222,22 @@ class Volreg(AfniFunction):
         subprocess.call(cmd)
         
         
-
+    def write(self, scriptwriter, input, suffix, motionfile, volreg_base):
+        
+        header = 'Motion correction:'
+        clean = {'afni':{'dataset':input+suffix},
+                 'standard':{'motionfile_name':motionfile}}
+        write_cmd = ['3dvolreg -Fourier -twopass -prefix ${prior_functional}${suffix} -base ${volreg_base} -dfile ${motionfile_name} ${prior_functional}+orig']
+        write_vars = {'prior_functional':input,
+                       'suffix':suffix, 'volreg_base':volreg_base,
+                       'motionfile_name':motionfile}
+        
+        scriptwriter.write_section(header=header, cmd=write_cmd, vars=write_vars,
+                                   clean=clean)
+        
+        
+        
+    
 class Smooth(AfniFunction):
     
     def __init__(self):
@@ -143,11 +246,21 @@ class Smooth(AfniFunction):
         
     def __call__(self, input_path, output_path_prefix, blur_kernel):
         
-        self._clean(ouput_path_prefix, clean_type='orig')
+        self._clean(output_path_prefix, clean_type='orig')
         cmd = ['3dmerge', '-prefix', output_path_prefix, '-1blur_fwhm',
                str(blur_kernel), '-doall', input_path]
         subprocess.call(cmd)
         
+        
+    def write(self, scriptwriter, input, suffix, blur_kernel):
+        
+        header = 'Blur dataset:'
+        clean = {'afni':{'dataset':input+suffix}}
+        write_cmd = ['3dmerge -prefix ${prior_functional}${suffix} -1blur_fwhm ${blur_kernel} -doall ${prior_functional}+orig']
+        write_vars = {'blur_kernel':blur_kernel, 'prior_functional':input}
+        
+        scriptwriter.write_section(header=header, cmd=write_cmd,
+                                   vars=write_vars, clean=clean)
         
         
 
@@ -167,8 +280,8 @@ class NormalizePSC(AfniFunction):
                    input_path+'[0..'+str(trs)+']']
         refit_cmd = ['3drefit', '-abuc', ave_path_prefix+'+orig']
         calc_cmd = ['3dcalc', '-datum', 'float', '-a',
-                    input+path+'[0..'+str(trs)+']', '-b',
-                    ave_path_prefix+'+orig', expression, '-prefix',
+                    input_path+'[0..'+str(trs)+']', '-b',
+                    ave_path_prefix+'+orig', '-expr', expression, '-prefix',
                     output_path_prefix]
         
         subprocess.call(ave_cmd)
@@ -177,6 +290,34 @@ class NormalizePSC(AfniFunction):
         
         if cleanup:
             self._clean(ave_path_prefix, clean_type='orig')
+            
+            
+    def write(self, scriptwriter, input, suffix, ave_suffix, trs,
+              expression='((a-b)/b)*100'):
+        
+        header = 'Normalize dataset:'
+        clean = {'afni':{'dataset':input+suffix,
+                         'ave_dataset':input+ave_suffix}}
+        
+        tstat_cmd = ['3dTstat -prefix ${prior_functional}${ave_suffix} \'${prior_functional}+orig[0..${functional_trs}]]\'']
+        tstat_vars = {'prior_functional':input,
+                      'ave_suffix':ave_suffix, 'functional_trs':trs-1}
+        
+        scriptwriter.write_section(header=header, clean=clean,
+                                   cmd=tstat_cmd, vars=tstat_vars)
+        
+        refit_cmd = ['3drefit -abuc ${prior_functional}${ave_suffix}+orig']
+        refit_vars = {'prior_functional':input,
+                      'ave_suffix':ave_suffix}
+        
+        scriptwriter.write_line(line=refit_cmd, vars=refit_vars)
+        
+        calc_cmd = ['3dcalc -datum float -a \'${prior_functional}+orig[0..${functional_trs}]\' -b ${prior_functional}${ave_suffix} -expr \"${normalize_expression}\" -prefix ${prior_functional}${suffix}']
+        calc_vars = {'prior_functional':input, 'suffix':suffix,
+                     'ave_suffix':ave_suffix, 'functional_trs':trs-1,
+                     'normalize_expression':expression}
+        
+        scriptwriter.write_line(line=calc_cmd, vars=calc_vars)
             
             
             
@@ -195,6 +336,18 @@ class HighpassFilter(AfniFunction):
         subprocess.call(cmd)
         
         
+    def write(self, scriptwriter, input, suffix, highpass_value):
+        
+        header = 'Fourier highpass filter:'
+        clean = {'afni':{'dataset':input+suffix}}
+        write_cmd = ['3dFourier -prefix ${prior_functional}${suffix} -highpass ${highpass_value} ${prior_functional}+orig']
+        write_vars = {'prior_functional':input, 'suffix':suffix,
+                      'highpass_value':highpass_value}
+        
+        scriptwriter.write_section(header=header, clean=clean,
+                                   cmd=write_cmd, vars=write_vars)
+        
+        
         
 class TalairachWarp(AfniFunction):
     
@@ -202,16 +355,38 @@ class TalairachWarp(AfniFunction):
         super(TalairachWarp, self).__init__()
         
         
-    def __call__(self, functional_path, output_path_prefix, template_path):
+    def __call__(self, functional_path, anatomical_path, template_path):
         
-        self._clean(output_path_prefix, clean_type='tlrc')
+        import os
+        curdir = os.getcwd()
+        os.chdir(os.path.split(anatomical_path)[0])
+        anatomical_path = os.path.split(anatomical_path)[1]
+        print anatomical_path
+        self._clean(anatomical_path[:-5], clean_type='tlrc')
         cmd = ['@auto_tlrc', '-warp_orig_vol', '-suffix', 'NONE',
-               '-base', template_path, '-input', output_path_prefix]
-        refit_cmd = ['3drefit', '-apar', output_path_prefix+'+tlrc',
+               '-base', template_path, '-input', anatomical_path]
+        refit_cmd = ['3drefit', '-apar', anatomical_path[:-5]+'+tlrc',
                      functional_path]
         
         subprocess.call(cmd)
         subprocess.call(refit_cmd)
+        os.chdir(curdir)
+        
+        
+    def write(self, scriptwriter, functional, anatomical, template_path):
+        
+        header = 'Warp to talairach space:'
+        clean = {'afni_tlrc':{'anatomical':anatomical}}
+        tlrc_cmd = ['@auto_tlrc -warp_orig_vol -suffix NONE -base ${tt_n27_path} -input ${anatomical_name}+orig']
+        tlrc_vars = {'anatomical_name':anatomical,
+                     'tt_n27_path':template_path}
+        
+        scriptwriter.write_section(header=header, clean=clean,
+                                        cmd=tlrc_cmd, vars=tlrc_vars)
+        
+        refit_cmd = ['3drefit -apar ${anatomical_name}+orig ${prior_functional}+orig']
+        refit_vars = {'anatomical_name':anatomical,
+                      'prior_functional':functional}
 
     
     

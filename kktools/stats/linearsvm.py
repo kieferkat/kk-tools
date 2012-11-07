@@ -5,8 +5,8 @@ import random
 import itertools
 import nibabel as nib
 import scipy.stats as stats
-from ..data.crossvalidation import CVObject
-from ..data.nifti import NiftiTools
+from ..base.crossvalidation import CVObject
+from ..base.nifti import NiftiTools
 from normalize import simple_normalize
 from threshold import threshold_by_pvalue, threshold_by_rawrange
 
