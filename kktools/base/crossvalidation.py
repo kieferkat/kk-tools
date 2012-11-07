@@ -97,7 +97,7 @@ class CVObject(Process):
             assert fold_inds == self.test_dict.keys()
             
             self.trainX = [self.subselect(X, self.train_dict[tg]) for tg in fold_inds]
-            self.trainY = [self.subselect(Y,self.train_dict[tg]) for tg in fold_inds]
+            self.trainY = [self.subselect(Y, self.train_dict[tg]) for tg in fold_inds]
             self.testX = [self.subselect(X, self.test_dict[tg]) for tg in fold_inds]
             self.testY = [self.subselect(Y, self.test_dict[tg]) for tg in fold_inds]
             

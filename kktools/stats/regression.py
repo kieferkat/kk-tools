@@ -42,7 +42,8 @@ class LogisticRegression(Regression):
             for ind in trial_inds:
                 fixed_effects[ind, i] = 1.
                 
-        print np.sum(fixed_effects, axis=1)
+        print fixed_effects[0:20]
+        print np.sum(fixed_effects, axis=0)
         print np.shape(fixed_effects)
         print np.shape(self.X)
         
@@ -51,13 +52,14 @@ class LogisticRegression(Regression):
         print np.shape(self.X)
         
         self.fixed_effects_set = True
-
-        
+    
         
     def add_intercept(self):
         
         print np.shape(self.X)
-        self.X = np.hstack((np.ones(self.X.shape[0]), self.X))
+        intercept = np.ones((self.X.shape[0],1))
+        print np.shape(intercept)
+        self.X = np.hstack((intercept, self.X))
         self.intercept_set = True
         print np.shape(self.X)
         
@@ -72,6 +74,19 @@ class LogisticRegression(Regression):
         if verbose:
             print 'Y shape: ', Y.shape
             print 'X shape: ', X.shape
+            #print X[0:20]
+            print np.sum(Y)
+            
+        if self.fixed_effects_set:
+            print 'removing all-0 columns...'
+            sums = np.sum(X, axis=0)
+            print sums
+            del_cols = [i for i,x in enumerate(sums) if x==0.]
+            self.prior_beta_split = len(self.subject_indices.keys())-len(del_cols)
+            X = np.delete(X, del_cols, 1)
+            print 'new x shape:'
+            print np.shape(X)
+            
             
         model = statsmodels.api.Logit(Y, X)
         if verbose:
@@ -82,19 +97,28 @@ class LogisticRegression(Regression):
     
     
     
-    def logistic_test(self, X, Y, train_results, predict_with_intercept=True):
+    def logistic_test(self, X, Y, train_results, predict_with_intercept=True,
+                      predict_with_fixed_effects=True, use_prior_beta_split=True):
         
         training_betas = train_results.params
+        print training_betas
         
         # please add fixed effects BEFORE intercept, for now! 
         if self.fixed_effects_set:
-            training_betas = training_betas[len(self.subject_indices.keys()):]
-            X = np.hsplit((X, len(self.subject_indices.keys())))
+            if not predict_with_fixed_effects:
+                if use_prior_beta_split:
+                    print np.shape(X), self.prior_beta_split, len(training_betas)
+                    X = np.hsplit(X, [len(self.subject_indices.keys())])[1]
+                    training_betas = training_betas[self.prior_beta_split:]
+                    print np.shape(X), len(training_betas)
+                else:
+                    X = np.hsplit(X, [len(self.subject_indices.keys())])[1]
+                    training_betas = training_betas[len(self.subject_indices.keys()):]
         
         
         if self.intercept_set:
             if not predict_with_intercept:
-                X = np.hsplit((X, 1))
+                X = np.hsplit(X, 1)[1]
                 training_betas = training_betas[1:]
                 
         
@@ -106,7 +130,7 @@ class LogisticRegression(Regression):
 
 
     def crossvalidate(self, indices_dict=None, folds=None, leave_mod_in=False,
-                      intercept=True, predict_with_intercept=True):
+                      predict_with_intercept=True):
         
         indices_dict = indices_dict or getattr(self,'subject_indices', None)
         leave_mod_in = leave_mod_in or getattr(self,'leave_mod_in', False)
@@ -121,8 +145,10 @@ class LogisticRegression(Regression):
                 self.prepare_folds(indices_dict=indices_dict, folds=folds, leave_mod_in=leave_mod_in)
         
 
-        train_kwargs = {'intercept':intercept}
-        test_kwargs = {'intercept':intercept, 'predict_with_intercept':predict_with_intercept}
+        train_kwargs = {}
+        test_kwargs = {'predict_with_intercept':predict_with_intercept,
+                       'predict_with_fixed_effects':False,
+                       'use_prior_beta_split':True}
 
         
         self.trainresults, self.testresults = self.traintest_crossvalidator(self.logistic_train,
