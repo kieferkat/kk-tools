@@ -79,6 +79,27 @@ class CsvTools(object):
                     print 'Duplicate header, only last column used.'
             coldict[head] = [row[i] for row in data]
         return coldict
+    
+    
+    def subjectcsv_to_subjectdict(self, csv):
+
+        header, data = self.csv.split_header_data(csv)
+        header = [x.lower() for x in header]
+        subject_index = header.index('subject')
+        
+        subject_dict = {}
+        for row in data:
+            csub = row[subject_index]
+            if csub not in subject_dict:
+                subject_dict[csub] = {}
+            for i, value in enumerate(row):
+                if value is not csub:
+                    col_title = header[i]
+                    if col_title not in subject_dict[csub]:
+                        subject_dict[csub][col_title] = []
+                    subject_dict[csub][col_title].append(value)
+                    
+        return subject_dict
         
     
     def merge_csv_dicts(self, basedict, add_dicts, keylevel=0, verbose=True):

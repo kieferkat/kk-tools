@@ -16,7 +16,7 @@ from ..utilities.csv import CsvTools
 from ..afni.functions import AfniWrapper
 from ..utilities.vector import vecread
 from ..utilities.vector import subject_vector_dict as make_vector_dict
-
+from ..stats.normalize import simple_normalize
 
 
             
@@ -65,6 +65,12 @@ class DataManager(Process):
         print 'positive responses: ', self.Y.count(1)
         print 'negative responses: ', self.Y.count(-1)
         
+        
+    def normalize_subject_design_bysubject(self):
+        
+        for subject, [trials, resp_vec] in self.subject_design.items():
+            print 'normalizing within subject: ', subject
+            self.subject_design[subject][0] = simple_normalize(trials)
         
         
     def create_XY_matrices(self, subject_design=None, downsample_type=None, with_replacement=False,
@@ -302,14 +308,19 @@ class CsvData(DataManager):
                                                             self.subject_vector_dict,
                                                             keylevel=1)
 
+
+    def load_allsubject_csv(self, csv_path):
+        # must have subject in header!
+
+        csv_lines = self.csv.read(csv_path)
+        self.bysubject_data_dict = self.csv.subjectcsv_to_subjectdict(csv_lines)
+    
     
     
     def write_csv_data(self, filepath, data_dict):
-        
         csvlines = self.csv.subject_csvdicts_tolines(data_dict)
         self.csv.write(csvlines, filepath)
-    
-    
+
     
     def add_independent_variable(self, variable, conditional_dict={}):
         self.independent_dict[variable] = conditional_dict
@@ -628,7 +639,7 @@ class BrainData(DataManager):
         del(self.subject_data_dict)
         gc.collect()
         
-    
+        
     
     def subselect_data(self, selected_trs=None, trial_mask=None, lag=None, delete_data_dict=True,
                        verbose=True):

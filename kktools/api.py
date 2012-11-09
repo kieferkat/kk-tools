@@ -16,5 +16,6 @@ import utilities.parsers as parsers
 import utilities.vector as vector
 
 from afni.preprocess import Preprocessor
+from base.solutioncheck import SolutionChecker
 
 #import stats.regression as regression
