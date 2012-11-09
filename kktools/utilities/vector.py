@@ -47,6 +47,7 @@ def vectordir_todict(vector_dir, glob_prefix='*.tc', filename_split_keyinds=None
             id = ''.join([k for i,k in enumerate(vsplit) if i in filename_split_keyinds])
         else:
             id = vector_name
+        id = id.lower()
         vec_data = vecread(vector)
         vector_dict[id] = vec_data
 

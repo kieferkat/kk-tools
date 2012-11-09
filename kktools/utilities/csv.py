@@ -73,6 +73,7 @@ class CsvTools(object):
     def csv_to_coldict(self, csv, verbose=True):
         coldict = {}
         header, data = self.split_header_data(csv)
+        header = [x.lower() for x in header]
         for i, head in enumerate(header):
             if verbose:
                 if head in coldict:
@@ -83,7 +84,7 @@ class CsvTools(object):
     
     def subjectcsv_to_subjectdict(self, csv):
 
-        header, data = self.csv.split_header_data(csv)
+        header, data = self.split_header_data(csv)
         header = [x.lower() for x in header]
         subject_index = header.index('subject')
         

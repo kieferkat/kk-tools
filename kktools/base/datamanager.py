@@ -59,11 +59,11 @@ class DataManager(Process):
                 
                       
         
-    def _xy_matrix_tracker(self):
+    def _xy_matrix_tracker(self, Ybinary):
         print 'X (trials) length: ', len(self.X)
         print 'Y (responses) length: ', len(self.Y)
-        print 'positive responses: ', self.Y.count(1)
-        print 'negative responses: ', self.Y.count(-1)
+        print 'positive responses: ', self.Y.count(Ybinary[0])
+        print 'negative responses: ', self.Y.count(Ybinary[1])
         
         
     def normalize_subject_design_bysubject(self):
@@ -71,6 +71,7 @@ class DataManager(Process):
         for subject, [trials, resp_vec] in self.subject_design.items():
             print 'normalizing within subject: ', subject
             self.subject_design[subject][0] = simple_normalize(trials)
+        
         
         
     def create_XY_matrices(self, subject_design=None, downsample_type=None, with_replacement=False,
@@ -111,9 +112,9 @@ class DataManager(Process):
                     negative_trials = []
                     
                     for trial, response in zip(trials, responses):
-                        if response > 0:
+                        if response == Ybinary[0]:
                             positive_trials.append(trial)
-                        elif response < 0:
+                        elif response == Ybinary[1]:
                             negative_trials.append(trial)
                     
                     if not replacement_ceiling:
@@ -133,11 +134,11 @@ class DataManager(Process):
                             self.subject_indices[subject].append(len(self.X))
                             self.X.append(rep_trial)
                             
-                    self.Y.extend([1. for x in range(upper_length)])
-                    self.Y.extend([-1. for x in range(upper_length)])
+                    self.Y.extend([Ybinary[0] for x in range(upper_length)])
+                    self.Y.extend([Ybinary[1] for x in range(upper_length)])
         
                 if verbose:
-                    self._xy_matrix_tracker()
+                    self._xy_matrix_tracker(Ybinary)
                     
                     
                     
@@ -150,9 +151,9 @@ class DataManager(Process):
                 self.subject_indices[subject] = []
                 
                 for trial, response, in zip(trials, responses):
-                    if response > 0:
+                    if response == Ybinary[0]:
                         positive_trials.append([subject,trial])
-                    elif response < 0:
+                    elif response == Ybinary[1]:
                         negative_trials.append([subject,trial])
                         
             random.shuffle(positive_trials)
@@ -166,10 +167,10 @@ class DataManager(Process):
                     self.X.append(ptrial)
                     self.subject_indices[nsub].append(len(self.X))
                     self.X.append(ntrial)
-                    self.Y.extend([1.,-1.])
+                    self.Y.extend([Ybinary[0],Ybinary[1]])
                     
                 if verbose:
-                    self._xy_matrix_tracker()
+                    self._xy_matrix_tracker(Ybinary)
                     
             elif with_replacement:
                 
@@ -190,11 +191,11 @@ class DataManager(Process):
                         self.subject_indices[sub].append(len(self.X))
                         self.X.append(trial)
                         
-                self.Y.extend([1. for x in range(upper_length)])
-                self.Y.extend([-1. for x in range(upper_length)])
+                self.Y.extend([Ybinary[0] for x in range(upper_length)])
+                self.Y.extend([Ybinary[1] for x in range(upper_length)])
                 
                 if verbose:
-                    self._xy_matrix_tracker()
+                    self._xy_matrix_tracker(Ybinary)
                     
                     
                     
@@ -207,9 +208,9 @@ class DataManager(Process):
                 subject_negatives = []
                 
                 for trial, response in zip(trials, responses):
-                    if response > 0:
+                    if response == Ybinary[0]:
                         subject_positives.append(trial)
-                    elif response < 0:
+                    elif response == Ybinary[1]:
                         subject_negatives.append(trial)
                         
                 random.shuffle(subject_positives)
@@ -225,7 +226,7 @@ class DataManager(Process):
                             self.X.append(subject_positives[i])
                             self.subject_indices[subject].append(len(self.X))
                             self.X.append(subject_negatives[i])
-                            self.Y.extend([1.,-1.])
+                            self.Y.extend([Ybinary[0],Ybinary[1]])
                             
                     elif with_replacement:
                         if not replacement_ceiling:
@@ -248,11 +249,11 @@ class DataManager(Process):
                                 self.subject_indices[subject].append(len(self.X))
                                 self.X.append(trial)
                                 
-                        self.Y.extend([1. for x in range(upper_length)])
-                        self.Y.extend([-1. for x in range(upper_length)])
+                        self.Y.extend([Ybinary[0] for x in range(upper_length)])
+                        self.Y.extend([Ybinary[1] for x in range(upper_length)])
                         
                 if verbose:
-                    self._xy_matrix_tracker()
+                    self._xy_matrix_tracker(Ybinary)
                     
         self.X = np.array(self.X)
         self.Y = np.array(self.Y)
@@ -314,6 +315,7 @@ class CsvData(DataManager):
 
         csv_lines = self.csv.read(csv_path)
         self.bysubject_data_dict = self.csv.subjectcsv_to_subjectdict(csv_lines)
+        
     
     
     
@@ -370,6 +372,8 @@ class CsvData(DataManager):
         
         for spvar, spvals in keep_only_where_dict.items():
             
+            spvar = spvar.lower()
+            
             if not type(spvals) in (list, tuple):
                 spvals = [spvals]
                 
@@ -392,6 +396,7 @@ class CsvData(DataManager):
         nvars = []
         
         for cvar, conds in conditionals.items():
+            cvar = cvar.lower()
             for cond in conds:
                 cinds = self._find_inds_where(self.sparse_data_dict[subject][cvar], cond)
                 suffix = '_'.join([cvar, str(cond)])
