@@ -376,16 +376,17 @@ class HighpassFilter(AfniFunction):
         subprocess.call(cmd)
         
         
-    def write(self, scriptwriter, input, suffix, highpass_value):
+    def write(self, scriptwriter, input, output, highpass_value):
         
         header = 'Fourier highpass filter:'
-        clean = {'afni':{'dataset':input+suffix}}
-        write_cmd = ['3dFourier -prefix ${prior_functional}${suffix} -highpass ${highpass_value} ${prior_functional}+orig']
-        write_vars = {'prior_functional':input, 'suffix':suffix,
+        write_cmd = ['3dFourier -prefix ${output} -highpass ${highpass_value} ${input}+orig']
+        write_vars = {'input':input, 'output':output,
                       'highpass_value':highpass_value}
         
-        scriptwriter.write_section(header=header, clean=clean,
-                                   cmd=write_cmd, vars=write_vars)
+        section = {'header':header, 'command':write_cmd, 'variables':write_vars,
+                   'clean':[['output','orig']]}
+        
+        scriptwriter.add_section(section)
         
         
         
@@ -416,17 +417,21 @@ class TalairachWarp(AfniFunction):
     def write(self, scriptwriter, functional, anatomical, template_path):
         
         header = 'Warp to talairach space:'
-        clean = {'afni_tlrc':{'anatomical':anatomical}}
-        tlrc_cmd = ['@auto_tlrc -warp_orig_vol -suffix NONE -base ${tt_n27_path} -input ${anatomical_name}+orig']
-        tlrc_vars = {'anatomical_name':anatomical,
-                     'tt_n27_path':template_path}
+        tlrc_cmd = ['@auto_tlrc -warp_orig_vol -suffix NONE -base ${talairach_template} -input ${anatomical}+orig']
+        tlrc_vars = {'anatomical':anatomical,
+                     'talairach_template':template_path}
         
-        scriptwriter.write_section(header=header, clean=clean,
-                                        cmd=tlrc_cmd, vars=tlrc_vars)
+        tlrc_section = {'header':header, 'variables':tlrc_vars, 'command':tlrc_cmd,
+                        'clean':[['anatomical','tlrc']]}
         
-        refit_cmd = ['3drefit -apar ${anatomical_name}+orig ${prior_functional}+orig']
-        refit_vars = {'anatomical_name':anatomical,
-                      'prior_functional':functional}
+        scriptwriter.add_section(tlrc_section)
+        
+        refit_cmd = ['3drefit -apar ${anatomical}+orig ${functional}+orig']
+        refit_vars = {'anatomical':anatomical,
+                      'functional':functional}
+        
+        refit_section = {'command':refit_cmd, 'variables':refit_vars}
+        scriptwriter.add_section(refit_section)
 
 
 class Adwarp(AfniFunction):
@@ -451,16 +456,19 @@ class Adwarp(AfniFunction):
     def write(self, scriptwriter, apar, dpar, output_prefix, dxyz=1., force=False):
         
         header = 'Adwarp dataset:'
-        clean = {'afni_tlrc':{'adwarp_output':output_prefix}}
         if not force:
             adwarp_cmd = ['adwarp -apar ${apar_dset} -dpar ${dpar_dset} -dxyz ${adwarp_dxyz} -prefix ${adwarp_output}']
         else:
-            adwarp_cmd = ['adwarp -force -apar ${apar_dset} -dpar ${dpar_dset} -dxyz ${adwarp_dxyz} -prefix ${adwarp_output}']
-        adwarp_vars = {'apar_dset':apar, 'dpar_dset': dpar,
+            adwarp_cmd = ['adwarp -force -apar ${adwarp_apar} -dpar ${adwarp_dpar} -dxyz ${adwarp_dxyz} -prefix ${adwarp_output}']
+        adwarp_vars = {'adwarp_apar':apar, 'adwarp_dpar': dpar,
                        'adwarp_dxyz':str(dxyz), 'adwarp_output':output_prefix}
         
-        scriptwriter.write_section(header=header, clean=clean, cmd=adwarp_cmd,
-                                   vars=adwarp_vars)
+        
+        section = {'header':header, 'command':adwarp_cmd, 'variables':adwarp_vars,
+                   'clean':[['adwarp_output', 'tlrc']]}
+        
+        scriptwriter.add_section(section)
+
         
         
 class Automask(AfniFunction):
@@ -500,8 +508,10 @@ class AfnitoNifti(AfniFunction):
         a2n_cmd = ['3dAFNItoNIFTI -prefix ${nifti_output} ${afni_input}']
         a2n_vars = {'nifti_output':output_prefix, 'afni_input':input}
         
-        scriptwriter.write_section(header=header, clean=clean, cmd=a2n_cmd,
-                                   vars=a2n_vars)
+        section = {'header':header, 'command':a2n_cmd, 'variables':a2n_vars,
+                   'clean':[['nifti_output','nii']]}
+        
+        scriptwriter.add_section(section)
 
 
     
