@@ -18,7 +18,75 @@ class Regression(CVObject):
         
         self.X = getattr(self.data, 'X', None)
         self.Y = getattr(self.data, 'Y', None)
+        self.fixed_effects_set = False
+        self.intercept_set = False
         
+        
+    def add_intercept(self, verbose=True):
+        
+        if verbose:
+            print 'shape of X:', np.shape(self.X)
+        
+        intercept = np.ones((self.X.shape[0],1))
+        
+        if verbose:
+            print 'shape of intercept:', np.shape(intercept)
+        
+        self.X = np.hstack((intercept, self.X))
+        
+        if verbose:
+            print 'new X shape with intercept:', np.shape(self.X)
+            
+        self.intercept_set = True
+        
+        
+    
+    def add_fixed_effects(self, subject_indices=None, verbose=True):
+        
+        subject_indices = subject_indices or getattr(self, 'subject_indices', None)
+        if subject_indices is None:
+            print 'cannot add fixed effects without subject indices set...'
+            return False
+        
+        # fixed effects shares row size with X, columns are subjects
+        fixed_effects = np.zeros((self.X.shape[0], len(subject_indices.keys())))
+        
+        # add 1s for each subject in their row:
+        for i, (subject, trial_inds) in enumerate(subject_indices.items()):
+            for ind in trial_inds:
+                fixed_effects[ind, i] = 1.
+                
+        if verbose:
+            print 'sum of fixed effects column:'
+            print np.sum(fixed_effects, axis=0)
+            print 'shape of fixed effects column:', np.shape(fixed_effects)
+        
+        self.X = np.hstack((fixed_effects, self.X))
+        
+        if verbose:
+            print 'new X shape with fixed effects appended:', np.shape(self.X)
+        
+        self.fixed_effects_set = True
+        
+        
+        
+    def remove_zero_columns(self, X, subject_indices=None, verbose=True):
+        
+        if verbose:
+            print 'removing all-0 columns (typically for fixed effects during crossval)...'
+        
+        sums = np.sum(X, axis=0)
+        del_cols = [i for i,x in enumerate(sums) if x==0.]
+        X = np.delete(X, del_cols, 1)
+        
+        if verbose:
+            print 'new x shape:'
+            print np.shape(X)
+            
+        return X, del_cols
+    
+    
+    
             
 
 class LogisticRegression(Regression):
@@ -30,62 +98,20 @@ class LogisticRegression(Regression):
         
         if self.Y is not None:
             self.replace_Y_negative_ones()
-            
-        self.fixed_effects_set = False
-        self.intercept_set = False
-        
-        
-    def add_fixed_effects(self):
-        
-        fixed_effects = np.zeros((self.X.shape[0], len(self.subject_indices.keys())))
-        for i, (subject, trial_inds) in enumerate(self.subject_indices.items()):
-            for ind in trial_inds:
-                fixed_effects[ind, i] = 1.
-                
-        print fixed_effects[0:20]
-        print np.sum(fixed_effects, axis=0)
-        print np.shape(fixed_effects)
-        print np.shape(self.X)
-        
-        self.X = np.hstack((fixed_effects, self.X))
-        
-        print np.shape(self.X)
-        
-        self.fixed_effects_set = True
-    
-        
-    def add_intercept(self):
-        
-        print np.shape(self.X)
-        intercept = np.ones((self.X.shape[0],1))
-        print np.shape(intercept)
-        self.X = np.hstack((intercept, self.X))
-        self.intercept_set = True
-        print np.shape(self.X)
-        
         
         
     def logistic_train(self, X, Y, verbose=True):
-        #print X
-        #print type(X), type(X[1]), np.dtype(X.dtype), np.dtype(X[1].dtype)
         
         n, p = X.shape
             
         if verbose:
             print 'Y shape: ', Y.shape
             print 'X shape: ', X.shape
-            #print X[0:20]
-            print np.sum(Y)
+            print 'Y sum: ', np.sum(Y)
             
         if self.fixed_effects_set:
-            print 'removing all-0 columns...'
-            sums = np.sum(X, axis=0)
-            print sums
-            del_cols = [i for i,x in enumerate(sums) if x==0.]
+            X, del_cols = self.remove_zero_columns(X)
             self.prior_beta_split = len(self.subject_indices.keys())-len(del_cols)
-            X = np.delete(X, del_cols, 1)
-            print 'new x shape:'
-            print np.shape(X)
             
             
         model = statsmodels.api.Logit(Y, X)
@@ -93,6 +119,7 @@ class LogisticRegression(Regression):
             print 'Fitting logistic model...'
             
         results = model.fit()
+        
         return results
     
     
@@ -152,10 +179,10 @@ class LogisticRegression(Regression):
 
         
         self.trainresults, self.testresults = self.traintest_crossvalidator(self.logistic_train,
-                                                                  self.logistic_test,
-                                                                  self.trainX, self.trainY,
-                                                                  self.testX, self.testY,
-                                                                  train_kwargs, test_kwargs)
+                                                                            self.logistic_test,
+                                                                            self.trainX, self.trainY,
+                                                                            self.testX, self.testY,
+                                                                            train_kwargs, test_kwargs)
         
         self.cv_average = sum(self.testresults)/len(self.testresults)
         print 'Crossvalidation accuracy average: '

@@ -20,13 +20,15 @@ def dirs(topdir=os.getcwd(), prefixes=[], exclude=[], regexp=None, initial_glob=
     return sorted(files)
 
 
-def subject_dirs(topdir=os.getcwd(), prefixes=[], exclude=[]):
+def subject_dirs(topdir=os.getcwd(), prefixes=[], exclude=[], initial_glob='*'):
     return dirs(topdir=topdir, prefixes=prefixes, exclude=exclude,
-                regexp=r'[a-zA-Z]\d\d\d\d\d\d')
+                initial_glob=initial_glob,regexp=r'[a-zA-Z]\d\d\d\d\d\d')
     
     
-def subjects(max_length=None, topdir=os.getcwd(), prefixes=[], exclude=[]):
-    subjdirs=subject_dirs(topdir=topdir, prefixes=prefixes, exclude=exclude)
+def subjects(max_length=None, topdir=os.getcwd(), prefixes=[], exclude=[],
+             initial_glob='*'):
+    subjdirs=subject_dirs(topdir=topdir, prefixes=prefixes, exclude=exclude,
+                          initial_glob=initial_glob)
     if not max_length:
         return [os.path.split(x)[1] for x in subjdirs]
     else:

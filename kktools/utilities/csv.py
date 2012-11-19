@@ -8,7 +8,7 @@ import numpy as np
 import scipy.stats as stats
 import sys
 import pylab
-from vector import vecread
+from vector import VectorTools
 #from ..base.process import Process
 
 # yeah, i do know there is a csv module. who cares?
@@ -27,6 +27,7 @@ class CsvTools(object):
     
     def __init__(self):
         super(CsvTools, self).__init__()
+        self.vector = VectorTools()
         
     
     def import_as_recarray(self, csv):

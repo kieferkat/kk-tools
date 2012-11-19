@@ -11,23 +11,20 @@ import scipy as sp
 import nibabel as nib
 from process import Process
 from nifti import NiftiTools
+from sklearn import preprocessing
+from nipy.io.api import load_image
+
 from ..utilities.cleaners import glob_remove
 from ..utilities.csv import CsvTools
 from ..afni.functions import AfniWrapper
-from ..utilities.vector import vecread
-from ..utilities.vector import subject_vector_dict as make_vector_dict
-from ..stats.normalize import simple_normalize
+from ..utilities.vector import VectorTools
 
 
-            
-
-        
 
 class DataManager(Process):
     
     def __init__(self, variable_dict=None):
         super(DataManager, self).__init__(variable_dict=variable_dict)
-        self.nifti = NiftiTools()
         
             
             
@@ -56,21 +53,20 @@ class DataManager(Process):
             return recoded
         else:
             return np.array(recoded)
-                
-                      
         
+        
+                
+                
     def _xy_matrix_tracker(self, Ybinary):
+        '''
+        A function for verbosity in the create_XY_matrices.
+        '''
         print 'X (trials) length: ', len(self.X)
         print 'Y (responses) length: ', len(self.Y)
         print 'positive responses: ', self.Y.count(Ybinary[0])
         print 'negative responses: ', self.Y.count(Ybinary[1])
         
         
-    def normalize_subject_design_bysubject(self):
-        
-        for subject, [trials, resp_vec] in self.subject_design.items():
-            print 'normalizing within subject: ', subject
-            self.subject_design[subject][0] = simple_normalize(trials)
         
         
         
@@ -87,6 +83,7 @@ class DataManager(Process):
         
         
         if self.random_seed:
+            print self.random_seed
             np.random.seed(self.random_seed)
             random.seed(self.random_seed)
             
@@ -259,7 +256,62 @@ class DataManager(Process):
         self.Y = np.array(self.Y)
         
         
+    def normalizeX(self):
+        print 'normalizing X'
+        self.X = preprocessing.normalize(self.X)
+        
+    def scaleX(self):
+        print 'scaling X'
+        self.X = preprocessing.scale(self.X)
+        
+        
+    def normalize_within_subject(self, normalizeY=False):
+        '''
+        Iterates through the subject trials and normalizes the X matrices
+        individually for each subject. This should obviously be done prior
+        to calling create_XY_matrices.
+        
+        Optionally normalizes the Y vector as well.
+        '''
+        
+        for subject, [trials, resp_vec] in self.subject_design.items():
+            print 'normalizing within subject: ', subject
+            self.subject_design[subject][0] = preprocessing.normalize(trials)
+            if normalizeY:
+                print 'also normalizing Y...'
+                self.subject_design[subject][1] = preprocessing.normalize(resp_vec)
+                
+                
+                
+    def scale_within_subject(self, scaleY=False):
+        '''
+        Iterates through subject X and Y matrices and scales the X matrix. Can
+        also optionally scale the Y matrix. Should be done prior to calling
+        create_XY_matrices, if done at all.
+        '''
+        
+        for subject, [trials, resp_vec] in self.subject_design.items():
+            print 'scaling within subject:', subject
+            self.subject_design[subject][0] = preprocessing.scale(trials)
+            if scaleY:
+                print 'also scaling Y...'
+                self.subject_design[subject][1] = preprocessing.scale(resp_vec)
+        
 
+    def recodeY(self, oldvalues, newvalues):
+        '''
+        Will iterate through oldvalues and newvalues (paired), replacing the old
+        values with the new values.
+        
+        Keep in mind this replacement is iterative, so if you first replace 1 with
+        0, then later replace 0 with -1, you will have -1s for 1s in the end.
+        Thus the values that come last have precedence in replacement.
+        '''
+        
+        if len(oldvalues) == len(newvalues):
+            for ov, nv in zip(oldvalues, newvalues):
+                self.Y = [nv if y == ov else y for y in self.Y]
+        
 
 
 class CsvData(DataManager):
@@ -267,6 +319,7 @@ class CsvData(DataManager):
     def __init__(self, variable_dict=None):
         super(CsvData, self).__init__(variable_dict=variable_dict)
         self.csv = CsvTools()
+        self.vector = VectorTools()
         self.independent_dict = {}
         self.dependent_dict = {}
         self.bysubject_data_dict = {}
@@ -294,7 +347,7 @@ class CsvData(DataManager):
         self._assign_variables(required_vars)
         if not self._check_variables(required_vars): return False
         
-        self.subject_vector_dict = make_vector_dict(self.subject_dirs, tmp_tc_dir)
+        self.subject_vector_dict = self.vector.subject_vector_dict(self.subject_dirs, tmp_tc_dir)
         
 
 
@@ -488,314 +541,231 @@ class CsvData(DataManager):
                         
 
     
-
-
-
+    
 class BrainData(DataManager):
+    '''
+    BrainData
+    ------------
+    Recoded BrainData class in style of Jonathan Taylor's masking scheme. It
+    preforms faster than my old one so I decided to go with this. However,
+    his originally forced a matrix transposition (reversal) which may not
+    be ideal. This has the option of either using his matrix format or
+    preserving (as best as possible) the dimensionality when loading niftis
+    using nipy or nibabel.
+    
+    '''
     
     def __init__(self, variable_dict=None):
-        super(BrainData, self).__init__(variable_dict=variable_dict)
-        self.nifti = NiftiTools()
         
-            
-            
+        super(BrainData, self).__init__(variable_dict=variable_dict)
+        self.subject_data_dict = {}
+        self.nifti = NiftiTools()
+        self.vector = VectorTools()
+    
+    
     def create_niftis(self, subject_dirs=None, functional_name=None, anatomical_name=None,
                       dxyz=None, talairach_template_path=None, nifti_name=None,
                       within_subject_warp=True, to_template_warp=False):
         
-        required_vars = {'subject_dirs':subject_dirs, 'functional_name':functional_name,
-                         'anatomical_name':anatomical_name, 'dxyz':dxyz,
-                         'nifti_name':nifti_name}
-        
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return False
             
-        self.talairach_template_path = talairach_template_path or getattr(self,'talairach_template_path',None)
-        if not self.nifti_name.endswith('.nii'):
-            self.nifti_name = self.nifti_name+'.nii'
+        if not nifti_name.endswith('.nii'):
+            nifti_name = nifti_name+'.nii'
         
-        self.nifti.create_talairach_niftis(self.subject_dirs, self.functional_name,
-                                           self.anatomical_name, self.dxyz,
-                                           self.talairach_template_path, self.nifti_name,
+        self.nifti.create_talairach_niftis(subject_dirs, functional_name,
+                                           anatomical_name, dxyz,
+                                           talairach_template_path, nifti_name,
                                            within_subject_warp, to_template_warp)
-    
         
-    def create_trial_mask(self, mask_path=None, selected_trs=None):
         
-        required_vars = {'mask_path':mask_path, 'selected_trs':selected_trs}
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return False
+    def load_niftis_vectors(self, directory, verbose=True):
+        '''
+        Loads niftis and response vectors from a directory. This function is
+        fairly specific. The nifti files should be named in this manner:
         
-        self.mask_data, self.mask_affine, self.mask_shape = self.nifti.load_nifti(self.mask_path)
+        prefix_***.nii
         
-        self.trial_mask = np.zeros((self.mask_shape[0], self.mask_shape[1], self.mask_shape[2],
-                                    len(self.selected_trs)), np.bool)
+        Such that prefix denotes a subject and an underscore splits this subject
+        from the rest of the nifti filename.
+        
+        Likewise, the response vector file should be coded:
+        
+        prefix_***.1D
+        
+        Such that the prefix matches a prefix for a nifti file!
+        NO DUPLICATE PREFIXES - WILL CHOOSE INDISCRIMINATELY
+        '''
+        
+        nifti_paths = sorted(glob.glob(os.path.join(directory, '*.nii')))
+        vector_paths = sorted(glob.glob(os.path.join(directory, '*.nii')))
+        
+        npre = [os.path.split(n)[1].split('_')[0] for n in nifti_paths]
+        vpre = [os.path.split(v)[1].split('_')[0] for v in vector_paths]
+        
+        pairs = []
+        for nifti, np in zip(nifti_paths, npre):
+            for vector, vp in zip(vector_paths, vpre):
+                if np == vp:
+                    pairs.append([nifti, self.vector.read(vector)])
+                    break
+        
+        return pairs
+        
+
+        
+        
+        
+    def load_niftis_fromdirs(self, subject_dirs, nifti_name, response_vector,
+                             verbose=True):
+        '''
+        Iterates through subject directories, parses the response vector,
+        and appends the path to the nifti file for loading later.
+        
+        Basic support for multiple niftis per subject (just added as different
+        key in the subject_data_dict).
+        
+        '''
+        for subject in subject_dirs:
                 
-        for i in range(len(self.selected_trs)):
-            self.trial_mask[:,:,:,i] = self.mask_data[:,:,:]
-            
-            
-    
-    def create_experiment_mask(self, mask_path=None, experiment_trs=None):
-        
-        required_vars = {'mask_path':mask_path, 'experiment_trs':experiment_trs}
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return False
-                
-        self.mask_data, self.mask_affine, self.mask_shape = self.nifti.load_nifti(self.mask_path)
-        
-        self.full_mask = np.zeros((self.mask_shape[0], self.mask_shape[1],
-                                   self.mask_shape[2], self.experiment_trs), np.bool)
-        
-        for i in range(self.experiment_trs):
-            self.full_mask[:,:,:,i] = self.mask_data[:,:,:]
-        
-        
-    
-    def parse_vector(self, vector_path, verbose=False):
-        vfid = open(vector_path, 'rb')
-        lines = vfid.readlines()
-        vfid.close()
-        vec = np.zeros(len(lines))
-        
-        for i in range(len(lines)):
-            vl = int(lines[i].strip('\n'))
-            if vl == 1 or vl == -1:
-                vec[i] = vl
-        
-        if verbose:
-            print vec
-                
-        return vec
-    
-    
-        
-    def load_nifti_data(self, subject_dirs=None, nifti_name=None, response_vector=None):
-        
-        required_vars = {'subject_dirs':subject_dirs, 'nifti_name':nifti_name,
-                         'response_vector':response_vector}
-        
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return None
-            
-        self.subject_data_dict = {}
-            
-        # iterate through niftis
-        for subject in self.subject_dirs:
-            
-            if type(self.nifti_name) in (list, tuple) and type(self.response_vector) in (list, tuple):
-                for nifti, respvec in zip(self.nifti_name, self.response_vector):
-                    
-                    if not nifti.endswith('.nii'):
-                        nifti = nifti+'.nii'
-                    
-                    self.nifti_adder(subject, nifti, respvec)
-                    
+            nifti = os.path.join(subject, nifti_name)
+            vec = os.path.join(subject, response_vector)
+
+            if not os.path.exists(nifti):
+                if verbose:
+                    print 'nifti not found: ', nifti
+            elif not os.path.exists(vec):
+                if verbose:
+                    print 'respnse vector not found: ', vec
             else:
                 
-                if not self.nifti_name.endswith('.nii'):
-                    nifti_name = self.nifti_name+'.nii'
-                    
-                self.nifti_adder(subject, nifti_name, response_vector)
-            
-            
+                respvec = self.vector.read(vec, usefloat=True)
+                subject_key = os.path.split(subject)[1]
                 
-    
-    def nifti_adder(self, dir, nifti, vector, suffix=''):
-        
-        nifti = os.path.join(dir, nifti)
-        vec = os.path.join(dir, vector)
-        
-        if not os.path.exists(nifti):
-            print 'not found: ', nifti
-        elif not os.path.exists(vec):
-            print 'not found: ', vec
-        else:
-            
-            respvec = self.parse_vector(vec)
-            pprint(nifti)
-            idata, affine, ishape = self.nifti.load_nifti(nifti)
-            
-            if getattr(self, 'raw_affine', None) is None:
-                pprint(affine)
-                self.raw_affine = affine
+                if verbose:
+                    pprint(nifti)
+                    print 'appending raw data for subject: ', subject_key
                 
-            if getattr(self, 'raw_data_shape', None) is None:
-                pprint(ishape)
-                self.raw_data_shape = ishape
-                
-            if getattr(self, 'experiment_trs', None) is None:
-                print 'experiment trs: ', ishape[3]
-                self.experiment_trs = ishape[3]
-                
-            subject_key = os.path.split(dir)[1]+suffix
-            print 'appending raw data for subject: ', subject_key
-            
-            if not subject_key in self.subject_data_dict:
-                self.subject_data_dict[subject_key] = [[np.array(idata)], [respvec]]
-            else:
-                self.subject_data_dict[subject_key][0].append(np.array(idata))
-                self.subject_data_dict[subject_key][1].append(respvec)
-    
- 
-    
-    def free_nifti_data(self):
-        self.subject_data_dict = None
-        del(self.subject_data_dict)
-        gc.collect()
-        
-        
-    
-    def subselect_data(self, selected_trs=None, trial_mask=None, lag=None, delete_data_dict=True,
-                       verbose=True):
-        
-        required_vars = {'selected_trs':selected_trs, 'trial_mask':trial_mask,
-                         'lag':lag}
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return False
-        
-        justified_trs = [x-1 for x in self.selected_trs]
-        
-        self.subject_design = {}
-        
-        print 'lag: ', self.lag
-        print 'experiment trs', self.experiment_trs
-        
-        #for subject, [nifti_data, resp_vec] in self.subject_data_dict.items():
-        
-        for subject, [nifti_datas, resp_vecs] in self.subject_data_dict.items():
-                        
-            for nifti_data, resp_vec in zip(nifti_datas, resp_vecs):
-                
-                print 'Subselecting and masking trials for: ', subject
-                
-                onsetindices = np.nonzero(resp_vec)[0]
-                responses = resp_vec[onsetindices]
-                trials = []
-                
-                for i, ind in enumerate(onsetindices):
-                    trs = [ind+tr+self.lag for tr in justified_trs]
-                    if trs[-1] < self.experiment_trs-1:
-                        raw_trial = nifti_data[:,:,:,trs]
-                        trials.append(raw_trial[self.trial_mask])
-                    else:
-                        if verbose:
-                            print 'left trial out', ind
-                        responses = responses[0:i]
-                
-                if not subject in self.subject_design:
-                    self.subject_design[subject] = [trials, responses]
+                if not subject_key in self.subject_data_dict:
+                    self.subject_data_dict[subject_key] = [nifti, respvec]
                     
                 else:
-                    self.subject_design[subject][0].extend(trials)
-                    self.subject_design[subject][1] = np.append(self.subject_design[subject][1], responses)
+                    tag = 2
+                    while subject_key+'_'+str(tag) in self.subject_data_dict:
+                        tag += 2
+                    self.subject_data_dict[subject_key+'_'+str(tag)] = [nifti, respvec]
                 
-            self.subject_design[subject][0] = np.array(self.subject_design[subject][0])
-            
-            if verbose:
-                print len(self.subject_design[subject][0])
-                print len(self.subject_design[subject][1])
-            
-                
-            if delete_data_dict:
-                print 'Deleting data_dict entry for: ', subject
-                # free some memory:
-                self.subject_data_dict[subject] = None
-                gc.collect()
-        
-        if delete_data_dict:
-            self.free_nifti_data()
-            
-        
-        
-    def save_numpy_data(self, save_directory=None, suffix=None):
-        
-        required_vars = {'save_directory':save_directory}
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return False
-        
-        if suffix is None:
-            try:
-                suffix = '_lag'+str(self.lag)+'_trs'+str(len(self.selected_trs))
-            except:
-                suffix = ''
-                
-        if not os.path.exists(self.save_directory):
-            os.makedirs(self.save_directory)
-            
-        for subject, [trials, responses] in self.subject_design.items():
-            
-            print 'Saving numpy trials and responses for subject: ', subject
-            
-            trial_file = os.path.join(self.save_directory, subject+'_trials'+suffix+'.npy')
-            resp_file = os.path.join(self.save_directory, subject+'_respvec'+suffix+'.npy')
-            
-            try:
-                os.remove(trial_file)
-            except:
-                pass
-            try:
-                os.remove(resp_file)
-            except:
-                pass
-                
-            np.save(trial_file, trials)
-            np.save(resp_file, responses)
-            
-        affine_file = os.path.join(self.save_directory, 'raw_affine'+suffix+'.npy')
-        try:
-            os.remove(affine_file)
-        except:
-            pass
-        np.save(affine_file, self.raw_affine)
-            
-            
-            
-    def load_numpy_data(self, subjects=None, save_directory=None, suffix=None):
-        
-        required_vars = {'subjects':subjects, 'save_directory':save_directory}
-        self._assign_variables(required_vars)
-        if not self._check_variables(required_vars): return False
-        
-        self.prediction_tr_length = getattr(self, 'prediction_tr_length', None) or len(self.selected_trs)
         
         
         
-        if suffix is None:
-            try:
-                suffix = '_lag'+str(self.lag)+'_trs'+str(self.prediction_tr_length)
-            except:
-                suffix = ''
+    def parse_trialsvec(self, trialsvec):
+        '''
+        Simple function to find the indices where Y is not 0. Returns the indices
+        vector and the stripped Y vector. Used by masked_data().
+        '''
+        
+        inds = [i for i,x in enumerate(trialsvec) if x != 0.]
+        y = [x for x in trialsvec if x != 0]
+        return inds, y
+    
+    
+        
+        
+    def masked_data(self, nifti, trialsvec, selected_trs=[], mask_path=None, lag=2,
+                    reverse_transpose=False, verbose=True):
+        
+        '''
+        This function masks, transposes, and subselects the trials from the nifti
+        data.
+        --------
+        nifti           :   a filepath to the nifti.
+        trialsvec       :   numpy array denoting the response variable at the TR of the
+                            trial onset.
+        selected_trs    :   a list of the trs in the trial to be subselected
+        mask_path       :   path to the mask (optional but recommended)
+        lag             :   how many TRs to push out the trial (2 recommended)
+        '''
+        
+        if verbose:
+            if reverse_transpose:
+                print 'using time-first reverse transposition of nifti matrix'
+            else:
+                print 'preserving dimensionality of nifti matrix (nt last)'
+        
+        image = load_image(nifti)
+        
+        if mask_path is None:
+            mask = np.ones(image.shape[:-1])
+        else:
+            mask = load_image(mask_path)
+            mask = np.asarray(mask)
+            
+        if verbose:
+            print 'nifti shape:', image.shape
+            print 'mask shape:', mask.shape
+            
+        if reverse_transpose:
+            mask = np.transpose(mask.astype(np.bool), [2, 1, 0])
+        else:
+            mask = mask.copy().astype(np.bool)
+            
+        nmask = np.not_equal(mask, 0).sum()
+        mask.shape = np.product(mask.shape)
+        
+        p = np.prod(image.shape[:-1])
+        
+        ntrs = len(selected_trs)
+        
+        trial_inds, response = self.parse_trialsvec(trialsvec)
+        
+        ntrials = len(trial_inds)
+        
+        if reverse_transpose:
+            X = np.zeros((ntrials, ntrs, nmask))
+        else:
+            X = np.zeros((ntrials, nmask, ntrs))
+        Y = np.zeros(ntrials)
+        
+        if reverse_transpose:
+            im = np.transpose(np.asarray(image), [3, 2, 1, 0])
+        
+            for i in range(ntrials):
+                if len(im) > trial_inds[i]+ntrs+lag:
+                    row = im[trial_inds[i]+lag:trial_inds[i]+ntrs+lag].reshape((ntrs,p))
+                    X[i] = row[:,mask]
+                    Y[i] = response[i]
+            
+        else:
+            im = np.asarray(image)
+            
+            for i in range(ntrials):
+                if im.shape[3] > trial_inds[i]+ntrs+lag:
+                    row = im[:,:,:,trial_inds[i]+lag:trial_inds[i]+ntrs+lag].reshape((p,ntrs))
+                    #print 'row shape', row.shape
+                    #print 'row masked shape', row[mask,:].shape
+                    X[i] = row[mask,:]
+                    #print 'xi shape', X[i].shape
+                    Y[i] = response[i]
+            
+        return X, Y
+    
+    
+    
+
+    def create_design(self, subject_dirs, nifti_name, respvec_name,
+                      mask_path=None, selected_trs=[], lag=2, reverse_transpose=False):
+        
+        self.load_niftis_fromdirs(subject_dirs, nifti_name, respvec_name)
         
         self.subject_design = {}
+        for subject, [image, respvec] in self.subject_data_dict.items():
+            sX, sY = self.masked_data(image, respvec, selected_trs=selected_trs,
+                                      mask_path=mask_path, lag=lag, reverse_transpose=reverse_transpose)
+            sX.shape = (sX.shape[0], np.prod(sX.shape[1:]))
+            print sX.shape
+            self.subject_design[subject] = [np.array(sX), np.array(sY)]
+            
         
-        for subject in self.subjects:
-            
-            print 'Loading numpy trials and responses for subject: ', subject
-            
-            try:
-                trial_file = os.path.join(self.save_directory, subject+'_trials'+suffix+'.npy')
-                resp_file = os.path.join(self.save_directory, subject+'_respvec'+suffix+'.npy')
-                
-                print trial_file, resp_file
-                
-                trials = np.load(trial_file)
-                responses = np.load(resp_file)
-                
-                self.subject_design[subject] = [trials, responses]
-            except:
-                print 'there was an error trying to load data & responses for subject: ', subject
-            
-        affine_file = os.path.join(self.save_directory, 'raw_affine'+suffix+'.npy')
-        
-        if not os.path.exists(affine_file):
-            print 'No raw affine file found (suffix issue?), problematic for exporting maps.'
-        else:
-            self.raw_affine = np.load(affine_file)
-            
-                    
 
-                    
+
             
         
         
