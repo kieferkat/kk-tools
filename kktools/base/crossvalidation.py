@@ -127,19 +127,21 @@ class CVObject(Process):
         
     def traintest_crossvalidator(self, trainfunction, testfunction, trainXgroups,
                                  trainYgroups, testXgroups, testYgroups, train_kwargs_dict={},
-                                 test_kwargs_dict={}):
+                                 test_kwargs_dict={}, verbose=False):
         
         trainresults = []
         testresults = []
         for trainX, trainY, testX, testY in zip(trainXgroups, trainYgroups,
                                                 testXgroups, testYgroups):
-            print 'Crossvalidating next group.'
+            if verbose:
+                print 'Crossvalidating next group.'
             trainpartial = functools.partial(trainfunction, trainX, trainY, **train_kwargs_dict)
             trainresult = trainpartial()
             testpartial = functools.partial(testfunction, testX, testY, trainresult, **test_kwargs_dict)
             testresult = testpartial()
-            print 'this groups\' test result:'
-            pprint(testresult)
+            if verbose:
+                print 'this groups\' test result:'
+                pprint(testresult)
             trainresults.append(trainresult)
             testresults.append(testresult)
             
@@ -176,6 +178,8 @@ class Crossvalidation(object):
         train_dict = {}
         test_dict = {}
         
+        self.test_subject_byfold = []
+        
         for p, groups in enumerate(perms):
             
             train_dict[p] = []
@@ -195,9 +199,11 @@ class Crossvalidation(object):
                     testing_subjects = cv_sets[cv_key]
                     if include_mod:
                         testing_subjects.extend(mod_keys)
-                        
+            
             for te_key in testing_subjects:
                 test_dict[p].extend(self.indices_dict[te_key])
+                
+            self.test_subject_byfold.append(testing_subjects)
                 
                 
         return train_dict, test_dict

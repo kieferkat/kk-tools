@@ -370,6 +370,30 @@ class CsvData(DataManager):
         self.bysubject_data_dict = self.csv.subjectcsv_to_subjectdict(csv_lines)
         
     
+    def normalize_columns_within_subject(self, columns):
+        
+        for subject, cols in self.bysubject_data_dict.items():
+            for col in cols:
+                if col in columns:
+                    data = np.array([float(x) for x in self.bysubject_data_dict[subject][col]])
+                    #print subject, data.shape
+                    data.shape = (data.shape[0], 1)
+                    #print data.shape
+                    self.bysubject_data_dict[subject][col] = [str(x[0]) for x in preprocessing.normalize(data, axis=0)]
+    
+    
+    
+    def scale_columns_within_subject(self, columns):
+        
+        for subject, cols in self.bysubject_data_dict.items():
+            for col in cols:
+                if col in columns:
+                    data = np.array([float(x) for x in self.bysubject_data_dict[subject][col]])
+                    #print subject, data.shape
+                    data.shape = (data.shape[0], 1)
+                    #print data.shape
+                    self.bysubject_data_dict[subject][col] = [str(x[0]) for x in preprocessing.scale(data, axis=0)]
+    
     
     
     def write_csv_data(self, filepath, data_dict):
@@ -379,6 +403,7 @@ class CsvData(DataManager):
     
     def add_independent_variable(self, variable, conditional_dict={}):
         self.independent_dict[variable] = conditional_dict
+        
         
     def add_dependent_variable(self, variable, conditional_dict={}):
         self.dependent_dict[variable] = conditional_dict

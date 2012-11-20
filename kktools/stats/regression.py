@@ -100,7 +100,7 @@ class LogisticRegression(Regression):
             self.replace_Y_negative_ones()
         
         
-    def logistic_train(self, X, Y, verbose=True):
+    def logistic_train(self, X, Y, verbose=False):
         
         n, p = X.shape
             
@@ -157,7 +157,7 @@ class LogisticRegression(Regression):
 
 
     def crossvalidate(self, indices_dict=None, folds=None, leave_mod_in=False,
-                      predict_with_intercept=True):
+                      predict_with_intercept=True, verbose=True):
         
         indices_dict = indices_dict or getattr(self,'subject_indices', None)
         leave_mod_in = leave_mod_in or getattr(self,'leave_mod_in', False)
@@ -185,8 +185,9 @@ class LogisticRegression(Regression):
                                                                             train_kwargs, test_kwargs)
         
         self.cv_average = sum(self.testresults)/len(self.testresults)
-        print 'Crossvalidation accuracy average: '
-        pprint(self.cv_average)
+        if verbose:
+            print 'Crossvalidation accuracy average: '
+            pprint(self.cv_average)
     
     
     
