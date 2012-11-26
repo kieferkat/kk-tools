@@ -557,6 +557,29 @@ class MaskAve(AfniFunction):
             
     
     
+class Info(AfniFunction):
+    
+    def __init__(self):
+        super(Info, self).__init__()
+        
+    
+    def __call__(self, dataset_path, output_filepath=None):
+        if output_filepath:
+            fid = open(output_filepath, 'w')
+        
+        cmd = ['3dinfo', dataset_path]
+        
+        fcontent = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        fcontent.wait()
+        fcontent = fcontent.communicate()[0]
+        
+        if output_filepath:
+            fid.write(fcontent)
+            fid.close()
+            
+        return fcontent
+    
+    
     
 class FractionizeMask(AfniFunction):
     
@@ -636,6 +659,7 @@ class AfniWrapper(Process):
     
     def __init__(self, variable_dict=None):
         super(AfniWrapper, self).__init__()
+        
         self.maskave = MaskAve()
         self.fractionize = FractionizeMask()
         self.maskdump = MaskDump()
@@ -653,5 +677,13 @@ class AfniWrapper(Process):
         self.adwarp = Adwarp()
         self.automask = Automask()
         self.afnitonifti = AfnitoNifti()
+        self.info = Info()
+        
+        
+        
+        
+        
+        
+        
         
     

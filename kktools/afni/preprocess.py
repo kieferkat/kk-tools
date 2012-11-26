@@ -8,18 +8,111 @@ from ..afni.pipeline import AfniPipeline
 from ..afni.functions import AfniWrapper
 from ..base.scriptwriter import Scriptwriter
 from ..utilities.cleaners import glob_remove
+from ..base.inspector import Inspector
 
 
 class Preprocessor(AfniPipeline):
     
     def __init__(self):
         super(Preprocessor, self).__init__()
-        self.script_name = 'preprocess'
+        self.script_name = 'preprocess_auto'
         self.scriptwriter = Scriptwriter()
         self.afni = AfniWrapper()
         self.run_script = True
         self.write_script = True
+        self.inspector = Inspector()
+    
         
+        
+    def run(self, subject_dirs, functional_niftis, anatomical_nifti,
+            functional_name='func', anatomical_name='anat', leadin=6, leadout=4,
+            tr_length=2.0, tshift_slice=0, tpattern='altplus', volreg_base=3,
+            motionfile_name='3dmotion.1D', blur_kernel=4, highpass_value=0.011,
+            normalize_expression='((a-b)/b)*100',
+            talairach_template_path='/Users/span/abin/TT_N27+tlrc', verbose=True):
+        
+        
+        if type(functional_niftis) not in (list, tuple):
+            functional_niftis = [functional_niftis]
+            
+            
+        for dir in subject_dirs:
+            
+            if verbose:
+                print 'Converting anatomical to afni...\n'
+            
+            self.convert_anatomical(dir=dir, dset_in=anatomical_nifti,
+                                    dset_out=anatomical_name,
+                                    verbose=verbose)
+            
+            for i,nifti in enumerate(functional_niftis):
+                
+                if verbose:
+                    print 'Cut off leadin/leadout: ', nifti
+                
+                nifti_info = self.inspector.parse_dataset_info(os.path.join(dir, nifti))
+                self.cutoff_buffer(dir=dir, dset_in=nifti, dset_out='epi'+str(i),
+                                   nifti_trs=nifti_info['total_trs'], leadin=leadin,
+                                   leadout=leadout)
+                
+                if verbose:
+                    print 'refit to correct tr length'
+                
+                self.refit(dir=dir, dset_in='epi'+str(i), tr_length=nifti_info['tr_length'])
+                
+                if verbose:
+                    print 'time slice correct epi'
+                
+                self.tshift(dir=dir, dset_in='epi'+str(i), dset_out='epits'+str(i),
+                            tshift_slice=tshift_slice, tpattern=tpattern)
+                
+            if verbose:
+                print 'concatenate datasets together'
+                
+            self.concatenate(dir=dir, dsets_in=['epits'+str(i)+'+orig' for i in range(len(functional_niftis))],
+                             dset_out=functional_name)
+            
+            dset_info = self.inspector.parse_dataset_info(os.path.join(dir, functional_name+'+orig'))
+            
+            if verbose:
+                print 'motion correct dataset'
+                
+            self.volreg(dir=dir, dset_in=functional_name, dset_out=functional_name+'_m',
+                        motionfile_name=motionfile_name, volreg_base=volreg_base)
+            
+            if verbose:
+                print 'smooth dataset'
+                
+            self.smooth(dir=dir, dset_in=functional_name+'_m', dset_out=functional_name+'_mb',
+                        blur_kernel=blur_kernel)
+            
+            if verbose:
+                print 'normalize dataset'
+                
+            self.normalize(dir=dir, dset_in=functional_name+'_mb', dset_out=functional_name+'_mbn',
+                           functional_trs=dset_info['total_trs'], dset_ave=functional_name+'_ave',
+                           normalize_expression=normalize_expression)
+            
+            if verbose:
+                print 'highpass filter dataset'
+                
+            self.highpass_filter(dir=dir, dset_in=functional_name+'_mbn', dset_out=functional_name+'_mbnf',
+                                 highpass_value=highpass_value)
+                
+        
+            if verbose:
+                print 'talairach warp dataset'
+                
+            self.talairach_warp(dir=dir, anatomical=anatomical_name, functional=functional_name+'_mbnf',
+                                template_path=talairach_template_path)
+        
+            if self.write_script:
+                subjects = [os.path.split(x)[1] for x in subject_dirs]
+                self.scriptwriter.loop_block_over_subjects(subjects)
+                self.scriptwriter.write_out(self.script_name)
+                self.write_script = False
+                
+            
         
         
     def convert_anatomical(self, dir=None, dset_in=None, dset_out=None,
@@ -154,7 +247,7 @@ class Preprocessor(AfniPipeline):
         
         
         
-    def highpass_filter(self, dir=None, dset_in=None, dset_out=None, highpass_value=None):
+    def highpass_filter(self, dir=None, dset_in=None, dset_out=None, highpass_value=0.011):
         
         prior_path = os.path.join(dir, dset_in+'+orig')
         filter_path = os.path.join(dir, dset_out)
@@ -170,7 +263,7 @@ class Preprocessor(AfniPipeline):
         
         
     def talairach_warp(self, dir=None, anatomical=None, functional=None,
-                       template_path=None):
+                       template_path='/Users/span/abin/TT_N27+tlrc.'):
 
         anat_path = os.path.join(dir, anatomical+'+orig')
         func_path = os.path.join(dir, functional+'+orig')        
