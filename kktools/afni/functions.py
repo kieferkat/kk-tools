@@ -35,13 +35,13 @@ class AfniFunction(object):
         return path
             
     
-    def _clean(self, glob_prefix, clean_type='standard', path=None):
+    def _clean(self, glob_prefix, clean_type=None, path=None):
         if path:
             prefix = os.path.join(path, glob_prefix)
         else:
             prefix = glob_prefix
             
-        if clean_type is 'standard':
+        if clean_type is None:
             self._clean_remove(glob.glob(prefix))
             
         elif clean_type is 'orig':
@@ -216,8 +216,8 @@ class TcatDatasets(AfniFunction):
         
     def __call__(self, input_paths, output_path_prefix, cleanup=True):
         
-        self._clean(output_path_prefix, type='orig')
-        cmd = ['3dTcat', '-prefix', output_path_prefix].extend(input_paths)
+        self._clean(output_path_prefix, clean_type='orig')
+        cmd = ['3dTcat', '-prefix', output_path_prefix]+input_paths
         subprocess.call(cmd)
         
         if cleanup:
@@ -332,16 +332,14 @@ class NormalizePSC(AfniFunction):
     def write(self, scriptwriter, input, output, average, trs, expression):
         
         header = 'Normalize dataset:'
-        clean = {'afni':{'dataset':input+suffix,
-                         'ave_dataset':input+ave_suffix}}
         
         tstat_cmd = ['3dTstat -prefix ${average} \'${input}+orig[0..${trs}]]\'']
         tstat_vars = {'average':average, 'input':input, 'trs':trs}
         
-        average = {'header':header, 'command':tstat_cmd, 'variables':tstat_vars,
+        average_d = {'header':header, 'command':tstat_cmd, 'variables':tstat_vars,
                    'clean':[['average','orig']]}
         
-        scriptwriter.add_section(average)
+        scriptwriter.add_section(average_d)
         
         refit_cmd = ['3drefit -abuc ${average}+orig']
         refit_vars = {'average':average}
@@ -355,7 +353,7 @@ class NormalizePSC(AfniFunction):
                      'average':average, 'trs':trs,
                      'expression':expression}
         
-        norm = {'command':calc_cmd, 'variables':calc_vars}
+        norm = {'command':calc_cmd, 'variables':calc_vars, 'clean':[['output','orig']]}
         
         scriptwriter.add_section(norm)
             
@@ -487,7 +485,7 @@ class Automask(AfniFunction):
         
         
     
-
+'''BROKEN (scriptwriter needs to be updated)'''
 class AfnitoNifti(AfniFunction):
     
     def __init__(self):
@@ -649,15 +647,78 @@ class MaskDump(AfniFunction):
             
             
 
+class RegAna(AfniFunction):
+    
+    def __init__(self):
+        super(AfniFunction, self).__init__()
+        
+        
+    def __call__(self, subject_dirs, dataset_name, output_path, Xrows, modelX=[], null=[0],
+                 rmsmin=0):
+        
+        dataset_paths = [os.path.join(sdir, dataset_name) for sdir in subject_dirs]
+        
+        self._clean(output_path)
+        
+        if not modelX:
+            modelX = [x+1 for x in range(len(Xrows[0]))]
+            
+        cols = len(Xrows[0])
+        rows = len(Xrows)
+        
+        cmd = ['3dRegAna', '-rows', str(rows), '-cols', str(cols)]
+        
+        for dset, sX in zip(dataset_paths, Xrows):
+            subrow = ['-xydata']+[str(x) for x in sX]+[dset]
+            cmd.extend(subrow)
+            
+        cmd.extend(['-rmsmin', str(rmsmin)])
+        cmd.extend(['-model']+[str(x) for x in modelX]+[':']+[str(x) for x in null])
+        cmd.extend(['-bucket','0',output_path])
+        
+        subprocess.call(cmd)
+        
+        
+    def write(self, scriptwriter, subjects, dataset_name, output_name, Xrows,
+              modelX=[], null=[0], rmsmin=0):
+        
+        header = '3dRegAna auto-script:'
+        
+        dataset_paths = [os.path.join('..', sub, '${regana_dataset}') for sub in subjects]
+        
+        if not modelX:
+            modelX = [x+1 for x in range(len(Xrows[0]))]
+        
+        cols = len(Xrows[0])
+        rows = len(Xrows)
+        
+        cmd = ['3dRegAna -rows '+str(rows)+' -cols '+str(cols)+'\\']
+        subcmd = []
+        for dset, sX in zip(dataset_paths, Xrows):
+            subrow = '-xydata '+' '.join([str(x) for x in sX])+' '+dset+'\\'
+            subcmd.append(subrow)
+                
+        
+        subcmd.append('-rmsmin '+str(rmsmin))
+        subcmd.append('-model '+' '.join([str(x) for x in modelX])+' : '+' '.join([str(x) for x in null]))
+        subcmd.append('-bucket  0 '+output_path)
+        
+        cmd.append(subcmd)
+        
+        regana_vars = {'regana_dataset':dataset_name}
+        
+        section = {'header':header, 'command':cmd, 'variables':regana_vars}
+        
+        scriptwriter.add_section(section)
 
         
         
         
         
     
-class AfniWrapper(Process):
+class AfniWrapper(object):
     
-    def __init__(self, variable_dict=None):
+    def __init__(self):
         super(AfniWrapper, self).__init__()
         
         self.maskave = MaskAve()
@@ -678,6 +739,7 @@ class AfniWrapper(Process):
         self.automask = Automask()
         self.afnitonifti = AfnitoNifti()
         self.info = Info()
+        self.regana = RegAna()
         
         
         

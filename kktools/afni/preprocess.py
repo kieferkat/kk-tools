@@ -3,6 +3,7 @@ import os, sys
 import subprocess
 import shutil
 import glob
+from pprint import pprint
 
 from ..afni.pipeline import AfniPipeline
 from ..afni.functions import AfniWrapper
@@ -16,12 +17,6 @@ class Preprocessor(AfniPipeline):
     def __init__(self):
         super(Preprocessor, self).__init__()
         self.script_name = 'preprocess_auto'
-        self.scriptwriter = Scriptwriter()
-        self.afni = AfniWrapper()
-        self.run_script = True
-        self.write_script = True
-        self.inspector = Inspector()
-    
         
         
     def run(self, subject_dirs, functional_niftis, anatomical_nifti,
@@ -29,7 +24,11 @@ class Preprocessor(AfniPipeline):
             tr_length=2.0, tshift_slice=0, tpattern='altplus', volreg_base=3,
             motionfile_name='3dmotion.1D', blur_kernel=4, highpass_value=0.011,
             normalize_expression='((a-b)/b)*100',
-            talairach_template_path='/Users/span/abin/TT_N27+tlrc', verbose=True):
+            talairach_template_path='/Users/span/abin/TT_N27+tlrc', verbose=True,
+            write_script=True, run_script=False):
+        
+        self.write_script = write_script
+        self.run_script = run_script
         
         
         if type(functional_niftis) not in (list, tuple):
@@ -51,6 +50,7 @@ class Preprocessor(AfniPipeline):
                     print 'Cut off leadin/leadout: ', nifti
                 
                 nifti_info = self.inspector.parse_dataset_info(os.path.join(dir, nifti))
+                pprint(nifti_info)
                 self.cutoff_buffer(dir=dir, dset_in=nifti, dset_out='epi'+str(i),
                                    nifti_trs=nifti_info['total_trs'], leadin=leadin,
                                    leadout=leadout)
@@ -72,7 +72,11 @@ class Preprocessor(AfniPipeline):
             self.concatenate(dir=dir, dsets_in=['epits'+str(i)+'+orig' for i in range(len(functional_niftis))],
                              dset_out=functional_name)
             
-            dset_info = self.inspector.parse_dataset_info(os.path.join(dir, functional_name+'+orig'))
+            
+            if self.run_script:
+                dset_info = self.inspector.parse_dataset_info(os.path.join(dir, functional_name+'+orig'))
+            else:
+                dset_info = nifti_info
             
             if verbose:
                 print 'motion correct dataset'
@@ -85,6 +89,7 @@ class Preprocessor(AfniPipeline):
                 
             self.smooth(dir=dir, dset_in=functional_name+'_m', dset_out=functional_name+'_mb',
                         blur_kernel=blur_kernel)
+            
             
             if verbose:
                 print 'normalize dataset'
@@ -111,6 +116,9 @@ class Preprocessor(AfniPipeline):
                 self.scriptwriter.loop_block_over_subjects(subjects)
                 self.scriptwriter.write_out(self.script_name)
                 self.write_script = False
+                
+            if not self.run_script:
+                break
                 
             
         

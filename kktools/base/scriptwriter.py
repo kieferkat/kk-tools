@@ -45,7 +45,7 @@ class Scriptwriter(object):
         return head
     
     
-    def justify_command_variables(self, command, variables):
+    def justify_command_variables(self, cmd, variables):
         filled_cmd = []
         for item in cmd:
             if type(item) in (list, tuple):
@@ -136,7 +136,7 @@ class Scriptwriter(object):
         subject_loop = []
         subject_loop.append('foreach subject ( '+' '.join(subjects)+' )\n')
         subject_loop.append(['cd ../${subject}*\n'])
-        subject_loop.append(self.current_block)
+        subject_loop.extend(self.current_block)
         subject_loop.append('\n\nend\n\n')
         self.current_block = subject_loop
             
