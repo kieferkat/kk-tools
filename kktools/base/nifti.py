@@ -112,6 +112,7 @@ class NiftiTools(object):
         self.save_nifti(shaped_matrix, affine, output_filepath)
         
         
+        
     def load_nifti(self, nifti_path):
         image = nib.load(nifti_path)
         shape = image.get_shape()

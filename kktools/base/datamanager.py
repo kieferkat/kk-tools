@@ -588,6 +588,7 @@ class BrainData(DataManager):
         self.vector = VectorTools()
     
     
+    
     def create_niftis(self, subject_dirs=None, functional_name=None, anatomical_name=None,
                       dxyz=None, talairach_template_path=None, nifti_name=None,
                       within_subject_warp=True, to_template_warp=False):
@@ -600,6 +601,8 @@ class BrainData(DataManager):
                                            anatomical_name, dxyz,
                                            talairach_template_path, nifti_name,
                                            within_subject_warp, to_template_warp)
+        
+        
         
         
     def load_niftis_vectors(self, directory, verbose=True):
@@ -693,9 +696,49 @@ class BrainData(DataManager):
     
     
         
+    def unmask_Xcoefs(self, Xcoefs, mask=None, reverse_transpose=True,
+                      verbose=True):
+        '''
+        Reshape the coefficients from a statistical method back to the shape of
+        the original brain matrix, so it can be output to nifti format.
+        '''
+        if mask is None:
+            mask = self.original_mask
+        
+        Xc_shape = Xcoefs.shape
+        
+        unmasked = [np.zeros(mask.shape) for i in range(Xc_shape[1])]    
+        
+        Xcoefs = np.transpose(Xcoefs, [1, 0])
+        
+        for i in range(Xc_shape[1]):
+            unmasked[i][np.asarray(mask).astype(np.bool)] = np.squeeze(np.array(Xcoefs[i]))
+            if reverse_transpose:
+                unmasked[i] = np.transpose(unmasked[i], [2, 1, 0])
+        
+        if verbose:
+            print 'Shape of unmasked coefs: ', np.shape(unmasked)
+        
+        return np.array(unmasked)
+        
+        
+        
+    def save_unmasked_coefs(self, unmasked, nifti_filename, affine=None):
+        '''
+        Simple function to save the unmasked coefficients to a specified nifti.
+        Affine is usually self.mask_affine, but can be specified.
+        '''
+        
+        if affine is None:
+            affine = self.mask_affine
+            
+        self.nifti.save_nifti(unmasked, affine, nifti_filename)
+        
+        
+        
         
     def masked_data(self, nifti, trialsvec, selected_trs=[], mask_path=None, lag=2,
-                    reverse_transpose=False, verbose=True):
+                    reverse_transpose=True, verbose=True):
         
         '''
         This function masks, transposes, and subselects the trials from the nifti
@@ -716,11 +759,13 @@ class BrainData(DataManager):
                 print 'preserving dimensionality of nifti matrix (nt last)'
         
         image = load_image(nifti)
+        #self.original_img_bool = np.zeros((image.shape[:-1]), np.bool)
         
         if mask_path is None:
             mask = np.ones(image.shape[:-1])
         else:
             mask = load_image(mask_path)
+            tmp_mask, self.mask_affine, tmp_shape = self.nifti.load_nifti(mask_path)
             mask = np.asarray(mask)
             
         if verbose:
@@ -731,6 +776,8 @@ class BrainData(DataManager):
             mask = np.transpose(mask.astype(np.bool), [2, 1, 0])
         else:
             mask = mask.copy().astype(np.bool)
+            
+        self.original_mask[:,:,:] = mask[:,:,:]
             
         nmask = np.not_equal(mask, 0).sum()
         mask.shape = np.product(mask.shape)
