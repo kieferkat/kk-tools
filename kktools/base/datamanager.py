@@ -696,7 +696,7 @@ class BrainData(DataManager):
     
     
         
-    def unmask_Xcoefs(self, Xcoefs, mask=None, reverse_transpose=True,
+    def unmask_Xcoefs(self, Xcoefs, time_points, mask=None, reverse_transpose=True,
                       verbose=True):
         '''
         Reshape the coefficients from a statistical method back to the shape of
@@ -704,17 +704,17 @@ class BrainData(DataManager):
         '''
         if mask is None:
             mask = self.original_mask
+            
+        unmasked = [np.zeros(mask.shape) for i in range(time_points)]    
         
-        Xc_shape = Xcoefs.shape
+        Xcoefs.shape = (time_points, -1)
         
-        unmasked = [np.zeros(mask.shape) for i in range(Xc_shape[1])]    
-        
-        Xcoefs = np.transpose(Xcoefs, [1, 0])
-        
-        for i in range(Xc_shape[1]):
+        for i in range(time_points):
             unmasked[i][np.asarray(mask).astype(np.bool)] = np.squeeze(np.array(Xcoefs[i]))
             if reverse_transpose:
                 unmasked[i] = np.transpose(unmasked[i], [2, 1, 0])
+        
+        unmasked = np.transpose(unmasked, [1, 2, 3, 0])
         
         if verbose:
             print 'Shape of unmasked coefs: ', np.shape(unmasked)
@@ -723,7 +723,8 @@ class BrainData(DataManager):
         
         
         
-    def save_unmasked_coefs(self, unmasked, nifti_filename, affine=None):
+    def save_unmasked_coefs(self, unmasked, nifti_filename, affine=None,
+                            talairach_template_path='./TT_N27+tlrc.'):
         '''
         Simple function to save the unmasked coefficients to a specified nifti.
         Affine is usually self.mask_affine, but can be specified.
@@ -733,6 +734,10 @@ class BrainData(DataManager):
             affine = self.mask_affine
             
         self.nifti.save_nifti(unmasked, affine, nifti_filename)
+        
+        self.nifti.convert_to_afni(nifti_filename, nifti_filename[:-4])
+        self.nifti.adwarp_to_template_talairach(nifti_filename[:-4]+'+orig', nifti_filename[:-4],
+                                                talairach_template_path)
         
         
         
@@ -777,7 +782,7 @@ class BrainData(DataManager):
         else:
             mask = mask.copy().astype(np.bool)
             
-        self.original_mask[:,:,:] = mask[:,:,:]
+        self.original_mask = mask.copy()
             
         nmask = np.not_equal(mask, 0).sum()
         mask.shape = np.product(mask.shape)

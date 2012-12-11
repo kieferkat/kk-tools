@@ -6,6 +6,7 @@ from ..base.crossvalidation import CVObject
 from ..utilities.csv import CsvTools
 from regression import Regression
 from sklearn.pls import PLSCanonical, PLSRegression, CCA
+from threshold import threshold_by_pvalue
 
 
 
@@ -17,7 +18,8 @@ class PLS(Regression):
                                   folds=folds)
         
         
-    def output_maps(self, X, Y, nifti_filepath, verbose=True):
+    def output_maps(self, X, Y, time_points, nifti_filepath,
+                    threshold=0.01, two_tail=True, verbose=True):
         
         if not nifti_filepath.endswith('.nii'):
             nifti_filepath = nifti_filepath+'.nii'
@@ -27,10 +29,14 @@ class PLS(Regression):
             
         pls = self.pls_train(X, Y, verbose=verbose)
         
+        coefs = pls.coefs
+        
+        thresh_coefs = threshold_by_pvalue(coefs, threshold, two_tail=two_tail)
+        
         if verbose:
             print 'reshaping the coefs to the original brain shape...'
             
-        unmasked = self.data.unmask_Xcoefs(pls.coefs, verbose=verbose)
+        unmasked = self.data.unmask_Xcoefs(thresh_coefs, time_points, verbose=verbose)
         
         if verbose:
             print 'saving nifti to filename: ', nifti_filepath
@@ -52,12 +58,15 @@ class PLS(Regression):
     
     def pls_test(self, X, Y, pls):
         
-        predicted_Y = pls.predict(X)
+        predicted_Y = [x[0] for x in pls.predict(X)]
         
         pred_Y_sign = np.sign(predicted_Y)
         Y_sign = np.sign(Y)
         
         accuracy = (Y_sign == pred_Y_sign).sum()*1. /Y.shape[0]
+        
+        print 'accuracy in fold: ', accuracy
+        return accuracy
         
         
     def crossvalidate(self, indices_dict, folds=None, leave_mod_in=False,
@@ -80,11 +89,12 @@ class PLS(Regression):
                                                                             self.testX, self.testY,
                                                                             train_kwargs, test_kwargs)
         
+        print self.testresults
         self.cv_average = sum(self.testresults)/len(self.testresults)
         
         if verbose:
             print 'crossvalidation accuracy average'
-            pprint(self.cvaverage)
+            pprint(self.cv_average)
         
         
         

@@ -4,7 +4,6 @@ import subprocess
 import glob
 import shutil
 
-from ..afni.pipeline import AfniPipeline
 from ..afni.functions import AfniWrapper
 from ..base.scriptwriter import Scriptwriter
 from ..utilities.cleaners import glob_remove
