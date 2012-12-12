@@ -785,11 +785,23 @@ class BrainData(DataManager):
         self.original_mask = mask.copy()
             
         nmask = np.not_equal(mask, 0).sum()
+        
+        ntrs = len(selected_trs)
+        
+        print mask.shape
+        
+        self.trial_mask = np.zeros((ntrs, mask.shape[0], mask.shape[1], mask.shape[2]))
+        print self.trial_mask.shape
+        
+        for t in range(ntrs):
+            self.trial_mask[t,:,:,:] = mask
+            
+        self.trial_mask = self.trial_mask.astype(np.bool)
+        print self.trial_mask.shape
+        
         mask.shape = np.product(mask.shape)
         
         p = np.prod(image.shape[:-1])
-        
-        ntrs = len(selected_trs)
         
         trial_inds, response = self.parse_trialsvec(trialsvec)
         

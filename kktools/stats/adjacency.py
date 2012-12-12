@@ -4,7 +4,7 @@ from scipy import sparse
 import numpy as np
 
 
-def construct_4d_adjacency_list(mask, numx=1, numy=1, numz=1):
+def construct_4d_adjacency_list(mask, numx=1, numy=1, numz=1, numt=1, nt=0):
     """
     Basically the prepare_adj function from regreg, but with less options.
     """
@@ -19,7 +19,7 @@ def construct_4d_adjacency_list(mask, numx=1, numy=1, numz=1):
     vmap -= 1 # sets vmap's values from 0 to mask.sum()-1
     
     adj = []
-    nx, ny, nz, nt = mask.shape
+    nx, ny, nz = mask.shape
     
     for i, j, k, t in itertools.product(range(nx), range(ny),
                                         range(nz), range(nt)):

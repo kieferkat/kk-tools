@@ -18,13 +18,15 @@ from optimization.cwpath.cwpath import inner1d
 from optimization.graphs.graph_laplacian import construct_adjacency_list
 # NEED TO ADD CYTHON & GRAPHS IMPORTS
 
+from graphnet_mask import adj_from_nii, convert_to_array, prepare_adj
+
 path_to_graphnetC_packages = os.path.abspath('/Users/span/kk_scripts/neuroparser/optimization/cwpath/.')
 sys.path.append(path_to_graphnetC_packages)
 import graphnet
 
 # local imports:
-from ..data.crossvalidation import CVObject
-from ..data.nifti import NiftiTools
+from ..base.crossvalidation import CVObject
+from ..base.nifti import NiftiTools
 
 
 
@@ -69,7 +71,7 @@ class GraphnetInterface(CVObject):
         subgrads = np.fabs(inner1d(X.T, y))
         return np.max(subgrads)
         
-        
+    '''
     def adj_array_as_list(self, adj):
         v = []
         for a in adj:
@@ -96,13 +98,13 @@ class GraphnetInterface(CVObject):
                             counts[i] += 1
                             counts[j] += 1
         return self.adj_array_as_list(A), Afull
-        
+    '''
     
     def regression_type_selector(self, l1, l2, l3, delta, svmdelta):
         if l1 and l2 and l3 and delta and svmdelta:
-            return 'RobustGraphNet'
-        elif l1 and l2 and l3 and delta:
             return 'HuberSVMGraphNet'
+        elif l1 and l2 and l3 and delta:
+            return 'RobustGraphNet'
         elif l1 and l2 and l3:
             return 'NaiveGraphNet'
         elif l1 and l2:
@@ -114,9 +116,9 @@ class GraphnetInterface(CVObject):
         
     
     
-    def test_graphnet(self, X, Y, G=None, l1=None, l2=None, l3=None, delta=None,
+    def test_graphnet(self, X, Y, trial_mask, G=None, l1=None, l2=None, l3=None, delta=None,
                       svmdelta=None, initial=None, adaptive=False, svm=False,
-                      scipy_compare=True, tol=1e-5):
+                      scipy_compare=False, tol=1e-5):
         
         tic = time.clock()
         
@@ -128,7 +130,8 @@ class GraphnetInterface(CVObject):
                 #nx = 60
                 #ny = 60
                 #A, Afull = construct_adjacency_list(nx, ny, 1, return_full=True)
-                A, Afull = self.gen_adj(X.shape[1])
+                #A, Afull = self.gen_adj(X.shape[1])
+                A = prepare_adj(trial_mask, numt=1)
             else:
                 A = G.copy()
         
@@ -136,7 +139,7 @@ class GraphnetInterface(CVObject):
             problemtype = graphnet.RobustGraphNet
             print 'Robust GraphNet with penalties (l1, l2, l3, delta): ', l1, l2, l3, delta
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta)
+            l.problem.assign_penalty(path_key='l1', l1=[l1], l2=l2, l3=l3, delta=delta)
         
         elif problemkey is 'HuberSVMGraphNet':
             problemtype = graphnet.GraphSVM
@@ -170,6 +173,9 @@ class GraphnetInterface(CVObject):
         # Solve the problem:
         print 'Solving the problem...'
         coefficients, residuals = l.fit(tol=tol, initial=initial)
+        
+        self.coefficients = coefficients
+        self.residuals = residuals
         
         print '\t---> Fitting problem with coordinate decesnt took: ', time.clock()-tic, 'seconds.'
         

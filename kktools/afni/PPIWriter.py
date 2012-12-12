@@ -62,7 +62,9 @@ class PPIWriter(object):
         pieces = ['3dresample', '-master',  self.functional+'_warp+tlrc',
                   '-prefix', self.mask_name+'r', '-inset',
                   '../'+self.mask_dir+'/'+self.mask_name+'+tlrc']
+        move = ['mv','../'+self.mask_dir+'/'+self.mask_name+'r*','./']
         cmd.append(' '.join(pieces))
+        cmd.append(' '.join(move))
         return cmd
     
     
@@ -222,7 +224,7 @@ class PPIWriter(object):
         cmd = ['# convert to z-scores:']
         
         pieces = ['3dcalc','-a','_'.join(['PPI',self.mask_name,self.suffix,'R'])+'+tlrc',
-                  '-expr','\'log((1+a)/(1-a))/2','-prefix','_'.join(['zPPI',self.mask_name,self.suffix,'R'])]
+                  '-expr','\'log((1+a)/(1-a))/2\'','-prefix','_'.join(['zPPI',self.mask_name,self.suffix,'R'])]
         cmd.append(' '.join(pieces))
         return cmd
     
@@ -270,8 +272,11 @@ class PPIWriter(object):
         
         betaind, R2ind = self.find_beta_r2(other_regressors)
         
+        internal.extend(self.clean(self.functional+'_warp+tlrc.BRIK',
+                                   self.functional+'_warp')+['\n'])
         internal.extend(self.warp_functional()+['\n'])
         internal.extend(self.clean(mask_name+'r+tlrc.BRIK',mask_name+'r+tlrc')+['\n'])
+        internal.extend(self.clean(mask_name+'r+orig.BRIK',mask_name+'r+orig')+['\n'])
         internal.extend(self.resample()+['\n'])
         internal.extend(self.maskave()+['\n'])
         internal.extend(self.detrend()+['\n'])
