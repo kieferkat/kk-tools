@@ -2,6 +2,7 @@
 import os
 import subprocess
 import glob
+from pprint import pprint
 
 
 class Scriptwriter(object):
@@ -15,9 +16,12 @@ class Scriptwriter(object):
         self.unset_variables = []
         
         
+    def add_bash_indicator(self):
+        return ['#! /bin/csh\n']
+        
+        
     def add_topheader(self, scriptname='Script'):
-        top = ['#! /bin/csh\n',
-               '######~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##',
+        top = ['######~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##',
                '####',
                '##\t\t'+scriptname+' auto-written by Scriptwriter',
                '##',
@@ -45,7 +49,7 @@ class Scriptwriter(object):
         return head
     
     
-    def justify_command_variables(self, cmd, variables):
+    def justify_command_variables(self, cmd, variables, verbose=False):
         filled_cmd = []
         for item in cmd:
             if type(item) in (list, tuple):
@@ -54,7 +58,8 @@ class Scriptwriter(object):
                 if variables:
                     for vname, var in variables.items():
                         if var is not None:
-                            print vname, var
+                            if verbose:
+                                print vname, var
                             if item.find('${'+vname+'}') != -1:
                                 item = item.replace('${'+vname+'}', str(var))
                         else:
@@ -128,8 +133,8 @@ class Scriptwriter(object):
             
         if section_command is not None:
             current_section.extend(section_command)
-            
-        self.current_block.append(current_section)
+        
+        self.current_block.extend(current_section)
 
             
     def loop_block_over_subjects(self, subjects):
@@ -157,16 +162,21 @@ class Scriptwriter(object):
         return out
                 
         
-    def prep_master(self):
-        self.master.extend(self.add_topheader())
-        self.master.extend(self.add_unset_vars())
+    def prep_master(self, add_unset_vars=True, topheader=True):
+        self.master.extend(self.add_bash_indicator())
+        if topheader:
+            self.master.extend(self.add_topheader())
+        if add_unset_vars:
+            self.master.extend(self.add_unset_vars())
         self.next_block()
         for block in self.blocks:
             self.master.extend(block)
         
         
-    def write_out(self, filename):
-        self.prep_master()
+    def write_out(self, filename, add_unset_vars=True, topheader=True):
+        self.prep_master(add_unset_vars=add_unset_vars, topheader=topheader)        
+        pprint(self.master)
+        pprint(self.blocks)
         fid = open(filename,'w')
         script = self.recursive_flatten(self.master, 0)
         fid.write(script)

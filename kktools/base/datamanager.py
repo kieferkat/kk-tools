@@ -9,11 +9,13 @@ import time
 import numpy as np
 import scipy as sp
 import nibabel as nib
+
 from process import Process
 from nifti import NiftiTools
 from sklearn import preprocessing
 from nipy.io.api import load_image
 
+from ..stats.normalize import simple_normalize
 from ..utilities.cleaners import glob_remove
 from ..utilities.csv import CsvTools
 from ..afni.functions import AfniWrapper
@@ -258,7 +260,10 @@ class DataManager(Process):
         
     def normalizeX(self):
         print 'normalizing X'
-        self.X = preprocessing.normalize(self.X)
+        print 'previous X sum', np.sum(self.X)
+        #self.X = preprocessing.normalize(self.X, axis=1)
+        self.X = simple_normalize(self.X, axis=0)
+        print 'post-normalization X sum', np.sum(self.X)
         
     def scaleX(self):
         print 'scaling X'
@@ -697,7 +702,7 @@ class BrainData(DataManager):
     
         
     def unmask_Xcoefs(self, Xcoefs, time_points, mask=None, reverse_transpose=True,
-                      verbose=True):
+                      verbose=True, slice_off_back=0, slice_off_front=0):
         '''
         Reshape the coefficients from a statistical method back to the shape of
         the original brain matrix, so it can be output to nifti format.
@@ -705,12 +710,28 @@ class BrainData(DataManager):
         if mask is None:
             mask = self.original_mask
             
-        unmasked = [np.zeros(mask.shape) for i in range(time_points)]    
+        unmasked = [np.zeros(mask.shape) for i in range(time_points)]
         
+        print 'xcoefs sum', np.sum(Xcoefs)
+        
+        if slice_off_back:
+            print np.sum(Xcoefs[:-slice_off_back]), np.sum(Xcoefs[-slice_off_back:])
+            Xcoefs = Xcoefs[:-slice_off_back]
+        if slice_off_front:
+            Xcoefs = Xcoefs[slice_off_front:]
+        
+        print 'xcoefs sum', np.sum(Xcoefs)
         Xcoefs.shape = (time_points, -1)
+        print 'Xcoefs shape', Xcoefs.shape
         
         for i in range(time_points):
+            print 'raw coef time sum', np.sum(Xcoefs[i])
+            print 'mask, xind shapes', mask.shape, Xcoefs[i].shape
+            
             unmasked[i][np.asarray(mask).astype(np.bool)] = np.squeeze(np.array(Xcoefs[i]))
+            #unmasked[i][np.asarray(mask).astype(np.bool)] = np.squeeze(np.ones(np.sum(np.asarray(mask).astype(np.bool))))
+            
+            print 'time ind coef sum', np.sum(unmasked[i])
             if reverse_transpose:
                 unmasked[i] = np.transpose(unmasked[i], [2, 1, 0])
         
@@ -735,9 +756,10 @@ class BrainData(DataManager):
             
         self.nifti.save_nifti(unmasked, affine, nifti_filename)
         
-        self.nifti.convert_to_afni(nifti_filename, nifti_filename[:-4])
-        self.nifti.adwarp_to_template_talairach(nifti_filename[:-4]+'+orig', nifti_filename[:-4],
-                                                talairach_template_path)
+        #self.nifti.convert_to_afni(nifti_filename, nifti_filename[:-4])
+        
+        #self.nifti.adwarp_to_template_talairach(nifti_filename[:-4]+'+orig', nifti_filename[:-4],
+        #                                        talairach_template_path)
         
         
         
@@ -838,6 +860,29 @@ class BrainData(DataManager):
     
     
     
+    def create_trial_mask(self, mask_path, ntrs, reverse_transpose=True):
+        
+        mask = load_image(mask_path)
+        tmp_mask, self.mask_affine, tmp_shape = self.nifti.load_nifti(mask_path)
+        mask = np.asarray(mask)
+        
+        if reverse_transpose:
+            mask = np.transpose(mask.astype(np.bool), [2, 1, 0])
+        else:
+            mask = mask.copy().astype(np.bool)
+        
+        self.original_mask = mask.copy()
+        
+        print mask.shape
+        
+        self.trial_mask = np.zeros((ntrs, mask.shape[0], mask.shape[1], mask.shape[2]))
+        
+        for t in range(ntrs):
+            self.trial_mask[t,:,:,:] = mask
+            
+        self.trial_mask = self.trial_mask.astype(np.bool)
+        print self.trial_mask.shape
+    
 
     def create_design(self, subject_dirs, nifti_name, respvec_name,
                       mask_path=None, selected_trs=[], lag=2, reverse_transpose=False):
@@ -852,7 +897,25 @@ class BrainData(DataManager):
             print sX.shape
             self.subject_design[subject] = [np.array(sX), np.array(sY)]
             
+            
+            
+    def create_design_logan_npy(self, subject_npys):
         
+        self.subject_design = {}
+        for npy in subject_npys:
+            subject = npy.split('.')[0]
+            cur_data = np.load(npy)
+            sX, sY = [], []
+            for ind in range(len(cur_data)):
+                sY.append(cur_data[ind]['Y'])
+                i_X = cur_data[ind]['X'].copy()
+                i_X.shape = (i_X.shape[0]*i_X.shape[1])
+                #print i_X.shape
+                sX.append(i_X)
+            self.subject_design[subject] = [np.array(sX), np.array(sY)]
+        
+        
+            
 
 
             

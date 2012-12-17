@@ -29,11 +29,17 @@ class RegAnaMaker(AfniPipeline):
         return xrow_dict
                 
                 
-    def pair_subjects_xrows(subjects, xrow_dict):
+    def pair_subjects_xrows(self, subjects, xrow_dict):
         subs = [os.path.split(sub)[1] for sub in subjects]
         xrows = []
         for subject in subs:
-            xrows.append(xrow_dict[subject])
+            if subject in xrow_dict:
+                xrows.append(xrow_dict[subject])
+            else:
+                for keysub in xrow_dict:
+                    if subject.lower().startswith(keysub.lower()):
+                        xrows.append(xrow_dict[keysub])
+                        break
         return xrows
     
     
@@ -51,16 +57,25 @@ class RegAnaMaker(AfniPipeline):
         
         
     
-    def write(self, subjects, dataset_name, output_name, subject_Xrows, modelX=[], null=[0],
-              rmsmin=0):
+    def write(self, subjects, dataset_name, dataset_ind, output_name, csv_path, xvar_names,
+              modelX=[], null=[0], rmsmin=0, script_name=None, subject_colname='subject',
+              verbose=True):
         
-        if type(subject_Xrows) == type([]):
-            Xrows = subject_Xrows
-        elif type(subject_Xrows) == type({}):
-            Xrows = self.pair_subjects_xrows(subjects, subject_Xrows)
+        if script_name:
+            self.script_name = script_name
         
-        self.afni.regana.write(self.scriptwriter, subjects, dataset_name, output_name,
-                               Xrows, modelX=modelX, null=null, rmsmin=rmsmin)
+        xrow_dict = self.xrows_from_inddiff_csv(csv_path, xvar_names, subjects,
+                                                subject_colname=subject_colname)
+        
+        if verbose:
+            pprint(xrow_dict)
+        
+        Xrows = self.pair_subjects_xrows(subjects, xrow_dict)
+        
+        self.afni.regana.write(self.scriptwriter, subjects, dataset_name, dataset_ind,
+                               output_name, Xrows, modelX=modelX, null=null, rmsmin=rmsmin)
+        
+        self.scriptwriter.write_out(self.script_name, add_unset_vars=False, topheader=False)
         
         
     

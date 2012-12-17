@@ -679,10 +679,15 @@ class RegAna(AfniFunction):
         subprocess.call(cmd)
         
         
-    def write(self, scriptwriter, subjects, dataset_name, output_name, Xrows,
+    def write(self, scriptwriter, subjects, dataset_name, dataset_ind, output_name, Xrows,
               modelX=[], null=[0], rmsmin=0):
         
         header = '3dRegAna auto-script:'
+        
+        if not (dataset_name.endswith('+tlrc')) or not (dataset_name.endswith('+tlrc.')):
+            dataset_name = dataset_name+'+tlrc'
+            
+        dataset_with_ind = dataset_name+'['+str(dataset_ind)+']'
         
         dataset_paths = [os.path.join('..', sub, '${regana_dataset}') for sub in subjects]
         
@@ -692,20 +697,20 @@ class RegAna(AfniFunction):
         cols = len(Xrows[0])
         rows = len(Xrows)
         
-        cmd = ['3dRegAna -rows '+str(rows)+' -cols '+str(cols)+'\\']
+        cmd = ['3dRegAna -rows '+str(rows)+' -cols '+str(cols)+' \\']
         subcmd = []
         for dset, sX in zip(dataset_paths, Xrows):
-            subrow = '-xydata '+' '.join([str(x) for x in sX])+' '+dset+'\\'
+            subrow = '-xydata '+' '.join([str(x) for x in sX])+' '+dset+' \\'
             subcmd.append(subrow)
                 
         
         subcmd.append('-rmsmin '+str(rmsmin))
         subcmd.append('-model '+' '.join([str(x) for x in modelX])+' : '+' '.join([str(x) for x in null]))
-        subcmd.append('-bucket  0 '+output_path)
+        subcmd.append('-bucket  0 '+output_name)
         
         cmd.append(subcmd)
         
-        regana_vars = {'regana_dataset':dataset_name}
+        regana_vars = {'regana_dataset':dataset_with_ind}
         
         section = {'header':header, 'command':cmd, 'variables':regana_vars}
         

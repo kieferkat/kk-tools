@@ -38,6 +38,8 @@ class CsvTools(object):
         fid = open(csv,'r')
         lines = fid.readlines()
         fid.close()
+        if len(lines) == 1 and (lines[0].find('\r') != -1):
+            lines = lines[0].split('\r')
         lines = [l.strip(newline).split(delimiter) for l in lines]
         return lines
     
@@ -78,7 +80,7 @@ class CsvTools(object):
         for i, head in enumerate(header):
             if verbose:
                 if head in coldict:
-                    print 'Duplicate header, only last column used.'
+                    print 'Duplicate header, only last column used.', head
             coldict[head] = [row[i] for row in data]
         return coldict
     

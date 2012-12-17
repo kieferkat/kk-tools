@@ -6,6 +6,7 @@ from base.nifti import NiftiTools
 from base.variables import Variables
 
 from afni.functions import AfniWrapper
+from afni.regana import RegAnaMaker
 
 from stats.linearsvm import ScikitsSVM
 from stats.regression import LogisticRegression

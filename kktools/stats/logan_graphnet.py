@@ -146,25 +146,25 @@ class GraphnetInterface(CVObject):
             print 'HuberSVM GraphNet with penalties (l1, l2, l3, delta): ', l1, l2, l3, delta
             Y = 2*np.round(np.random.uniform(0, 1, len(Y)))-1
             l = cwpath.CoordWise((X, Y, A), problemtype)
-            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta)
+            l.problem.assign_penalty(path_key='l1', l1=[l1], l2=l2, l3=l3, delta=delta)
             
         elif problemkey is 'NaiveGraphNet':
             problemtype = graphnet.NaiveGraphNet
             print 'Testing GraphNet with penalties (l1, l2, l3): ', l1, l2, l3
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3)
+            l.problem.assign_penalty(path_key='l1', l1=[l1], l2=l2, l3=l3)
             
         elif problemkey is 'NaiveENet':
             problemtype = graphnet.NaiveENet
             print 'Testing ENET with penalties (l1, l2): ', l1, l2
             l = cwpath.CoordWise((X, Y), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2)
+            l.problem.assign_penalty(path_key='l1', l1=[l1], l2=l2)
             
         elif problemkey is 'Lasso':
             problemtype = graphnet.Lasso
             print 'Testing LASSO with penalty (l1): ', l1
             l = cwpath.CoordWise((X, Y), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=l1)
+            l.problem.assign_penalty(path_key='l1', l1=[l1])
             
         else:
             print 'Incorrect parameters set (no problem key).'
