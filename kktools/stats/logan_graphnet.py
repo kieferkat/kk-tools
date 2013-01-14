@@ -27,6 +27,7 @@ import graphnet
 # local imports:
 from ..base.crossvalidation import CVObject
 from ..base.nifti import NiftiTools
+from normalize import simple_normalize
 
 
 
@@ -114,16 +115,69 @@ class GraphnetInterface(CVObject):
         else:
             return None
         
+        
+    def setup_crossvalidation(self, folds=None, subject_indices=None):
+        if subject_indices:
+            self.subject_indices = subject_indices
+        if getattr(self, 'subject_indices', None):
+            self.prepare_folds(folds=folds, indices_dict=self.subject_indices)
+        else:
+            print 'no subject indices set, cant setup cv folds'
+            
+            
+    def crossvalidate(self, train_kwargs_dict, use_memmap=False):
+        
+        trainresults, testresults = self.traintest_crossvalidator(self.train_graphnet,
+                                                                  self.test_graphnet,
+                                                                  self.trainX, self.trainY,
+                                                                  self.testX, self.testY,
+                                                                  train_kwargs_dict=train_kwargs_dict,
+                                                                  use_memmap=use_memmap)
+        
+        self.accuracies = testresults
+        self.average_accuracy = sum(self.accuracies)/len(self.accuracies)
+        print 'Average accuracy: ', self.average_accuracy
+        
+        
+    def test_graphnet(self, X, Y, coefs):
+        
+        X = simple_normalize(X)
+        
+        correct = []
+        print 'Checking accuracy for test group'
+        
+        if self.problemkey == 'RobustGraphNet':
+            coefs = coefs[:-self.trainX_shape[0]]
+        
+        for trial, outcome in zip(X, Y):
+            predict = trial*coefs
+            print np.sum(predict)
+            Ypredsign = np.sign(np.sum(predict))
+            if Ypredsign < 0.:
+                Ypredsign = 0.
+            else:
+                Ypredsign = 1.
+            print Ypredsign, outcome, (Ypredsign == outcome)
+            correct.append(Ypredsign == outcome)
+            
+        fold_accuracy = np.sum(correct) * 1. / len(correct)
+        
+        print 'fold accuracy: ', fold_accuracy
+        return fold_accuracy
     
     
-    def test_graphnet(self, X, Y, trial_mask, G=None, l1=None, l2=None, l3=None, delta=None,
+    def train_graphnet(self, X, Y, trial_mask=None, G=None, l1=None, l2=None, l3=None, delta=None,
                       svmdelta=None, initial=None, adaptive=False, svm=False,
                       scipy_compare=False, tol=1e-5):
+        
+        X = simple_normalize(X)
         
         tic = time.clock()
         
         problemkey = self.regression_type_selector(*[bool(x) for x in [l1, l2, l3, delta, svmdelta]])
         
+        self.problemkey = problemkey
+        self.trainX_shape = X.shape
         
         if problemkey in ('HuberSVMGraphNet', 'RobustGraphNet', 'NaiveGraphNet'):
             if G is None:
@@ -251,7 +305,7 @@ class GraphnetInterface(CVObject):
                 
             print '\t---> Coordinate-wise and Scipy optimization agree.'
             
-        return (coefficients, residuals), problemkey
+        return coefficients[0]
                 
         
         

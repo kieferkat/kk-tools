@@ -76,12 +76,13 @@ class CVObject(Process):
         self.train_dict = self.crossvalidator.train_dict
         self.test_dict = self.crossvalidator.test_dict
         
-        if (getattr(self, 'X', None) is not None) and (getattr(self, 'Y', None) is not None):
-            print 'assigning to trainX, trainY, testX, testY...'
-            self.cv_group_XY(self.X, self.Y)
-            self.crossvalidation_ready = True
-        else:
-            print 'X and Y matrices, unset.. run cv_group_XY(X, Y) when ready to get cv groups'
+        #if (getattr(self, 'X', None) is not None) and (getattr(self, 'Y', None) is not None):
+        print 'assigning to trainX, trainY, testX, testY...'
+        #self.cv_group_XY(self.X, self.Y)
+        self.cv_group_XY()
+        self.crossvalidation_ready = True
+        #else:
+        #    print 'X and Y matrices, unset.. run cv_group_XY(X, Y) when ready to get cv groups'
         
         
         return True
@@ -89,17 +90,52 @@ class CVObject(Process):
             
     def subselect(self, data, indices):
         return np.array([data[i].tolist() for i in indices])
+        
+        
+    def subselect_from_memmap(self, indices, X_memmap_path=None, X_memmap_shape=None,
+                              verbose=True):
+        
+        if X_memmap_path:
+            self.data.X_memmap_path = X_memmap_path
+        if X_memmap_shape:
+            self.data.X_memmap_shape = X_memmap_shape
+            
+        #bm = raw_input('Before memmap')
+        X_memmap = np.memmap(self.data.X_memmap_path, dtype='float64', mode='r', shape=self.data.X_memmap_shape)
+        
+        if verbose:
+            print X_memmap.shape, np.sum(X_memmap)
+        
+        #bf = raw_input('Before subset')
+        subset =  np.array([X_memmap[i] for i in indices])
+        
+        if verbose:
+            print subset.shape, np.sum(subset)
+            #print 'original X:'
+            #origX_subset = np.array([self.X[i].tolist() for i in indices])
+            #print np.sum(origX_subset)
+        
+        #bd = raw_input('Before delete')
+        del X_memmap
+        #ad = raw_input('After Delete')
+        
+        return subset
 
     
-    def cv_group_XY(self, X, Y):
+    def cv_group_XY(self):
         if getattr(self, 'train_dict', None) and getattr(self, 'test_dict', None):
             fold_inds = self.train_dict.keys()
             assert fold_inds == self.test_dict.keys()
             
-            self.trainX = [self.subselect(X, self.train_dict[tg]) for tg in fold_inds]
-            self.trainY = [self.subselect(Y, self.train_dict[tg]) for tg in fold_inds]
-            self.testX = [self.subselect(X, self.test_dict[tg]) for tg in fold_inds]
-            self.testY = [self.subselect(Y, self.test_dict[tg]) for tg in fold_inds]
+            #self.trainX = [self.subselect(X, self.train_dict[tg]) for tg in fold_inds]
+            #self.trainY = [self.subselect(Y, self.train_dict[tg]) for tg in fold_inds]
+            #self.testX = [self.subselect(X, self.test_dict[tg]) for tg in fold_inds]
+            #self.testY = [self.subselect(Y, self.test_dict[tg]) for tg in fold_inds]
+            
+            self.trainX = [self.train_dict[tg] for tg in fold_inds]
+            self.trainY = [self.train_dict[tg] for tg in fold_inds]
+            self.testX = [self.test_dict[tg] for tg in fold_inds]
+            self.testY = [self.test_dict[tg] for tg in fold_inds]
             
             self.subjects_in_folds = [self.crossvalidator.cv_sets[i] for i in fold_inds]
             
@@ -125,25 +161,71 @@ class CVObject(Process):
         return results
         
         
+        
+        
+        
     def traintest_crossvalidator(self, trainfunction, testfunction, trainXgroups,
                                  trainYgroups, testXgroups, testYgroups, train_kwargs_dict={},
-                                 test_kwargs_dict={}, verbose=False):
+                                 test_kwargs_dict={}, X=None, Y=None, use_memmap=False, verbose=True):
+        
+        if not use_memmap:
+            if X:
+                fullX = X
+            elif hasattr(self, 'X'):
+                fullX = self.X
+            else:
+                print 'no X (either specified or in class)'
+                return False
+        
+        if Y:
+            fullY = Y
+        elif hasattr(self, 'Y'):
+            fullY = self.Y
+        else:
+            print 'no Y (either specified or in class)'
+            return False
         
         trainresults = []
         testresults = []
+        
+        
         for trainX, trainY, testX, testY in zip(trainXgroups, trainYgroups,
                                                 testXgroups, testYgroups):
             if verbose:
                 print 'Crossvalidating next group.'
-            trainpartial = functools.partial(trainfunction, trainX, trainY, **train_kwargs_dict)
+                
+            #nothing = raw_input('Pre-crossval checkpoint.')
+                
+            if not use_memmap:
+                subX = self.subselect(fullX, trainX)
+            else:
+                subX = self.subselect_from_memmap(trainX)
+            #nothing = raw_input('subX loaded.')
+            
+            subY = self.subselect(fullY, trainY)
+            #nothing = raw_input('subY loaded.')
+                
+            trainpartial = functools.partial(trainfunction, subX, subY, **train_kwargs_dict)
             trainresult = trainpartial()
-            testpartial = functools.partial(testfunction, testX, testY, trainresult, **test_kwargs_dict)
+            
+            if not use_memmap:
+                subX = self.subselect(fullX, testX)
+            else:
+                subX = self.subselect_from_memmap(testX)
+                
+            subY = self.subselect(fullY, testY)
+            
+            testpartial = functools.partial(testfunction, subX, subY, trainresult, **test_kwargs_dict)
             testresult = testpartial()
+            
             if verbose:
                 print 'this groups\' test result:'
                 pprint(testresult)
+                
             trainresults.append(trainresult)
             testresults.append(testresult)
+            
+            print sum(testresults)/len(testresults)
             
         return trainresults, testresults
     
@@ -210,7 +292,8 @@ class Crossvalidation(object):
                 
         
         
-    def create_crossvalidation_folds(self, indices_dict=None, folds=None, leave_mod_in=False):
+    def create_crossvalidation_folds(self, indices_dict=None, folds=None, leave_mod_in=False,
+                                     verbose=True):
         
         self.folds = folds or getattr(self,'folds',None)
         self.indices_dict = indices_dict or getattr(self,'indices_dict',None)
@@ -223,6 +306,12 @@ class Crossvalidation(object):
             return False
         
         index_keys = self.indices_dict.keys()
+        if verbose:
+            print index_keys
+            
+        if len(index_keys) == 1:
+            print 'Cannot do crossvalidation with just 1 subject!'
+            return False
         
         if self.folds is None:
             print 'Folds unset, defaulting to leave one out crossvalidation...'

@@ -5,14 +5,20 @@ import numpy as np
 
 def simple_normalize(X, axis=0):
     
+    print 'normalizing X'
+    print 'previous X sum', np.sum(X)
+    
     std_devs = np.std(X, axis=axis)
     means = np.mean(X, axis=axis)
     
-    X = X-means
-    X = X/std_devs
-    
+    Xnorm = np.zeros(X.shape)
+    Xnorm = X-means
+    Xnorm = Xnorm/std_devs
+
     # remove any nans or infinities:
-    X = np.nan_to_num(X)
+    Xnorm = np.nan_to_num(Xnorm)
     
-    return X
+    print 'post-normalization X sum', np.sum(Xnorm)
+    
+    return Xnorm
 

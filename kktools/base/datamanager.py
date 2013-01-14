@@ -258,6 +258,28 @@ class DataManager(Process):
         self.Y = np.array(self.Y)
         
         
+    def delete_subject_design(self, checkpoint=False):
+        if checkpoint:
+            inp = raw_input('Press any key to delete subject design (preserves self.X and self.Y)')
+        del self.subject_design
+        
+        
+    def X_to_memmap(self, memmap_filepath, empty_X=True):
+        print 'Creating X memmap'
+        self.X_memmap_path = memmap_filepath
+        self.X_memmap_shape = self.X.shape
+        
+        X_memmap = np.memmap(self.X_memmap_path, dtype='float64', mode='w+', shape=self.X_memmap_shape)
+        X_memmap[:,:] = self.X[:,:]
+        
+        del X_memmap
+        
+        
+    def empty_X(self):
+        print 'emptying X'
+        self.X = []
+            
+        
     def normalizeX(self):
         print 'normalizing X'
         print 'previous X sum', np.sum(self.X)
@@ -756,11 +778,61 @@ class BrainData(DataManager):
             
         self.nifti.save_nifti(unmasked, affine, nifti_filename)
         
+        #THEN:
+        #3drefit -view tlrc ...
+        
         #self.nifti.convert_to_afni(nifti_filename, nifti_filename[:-4])
         
         #self.nifti.adwarp_to_template_talairach(nifti_filename[:-4]+'+orig', nifti_filename[:-4],
         #                                        talairach_template_path)
         
+        
+        
+        
+    def make_masks(self, mask_path, ntrs, reverse_transpose=True, verbose=True):
+        
+        '''
+        A function that makes the various mask objects.
+        '''
+        if verbose:
+            if reverse_transpose:
+                print 'using time-first reverse transposition of nifti matrix'
+            else:
+                print 'preserving dimensionality of nifti matrix (nt last)'
+        
+        mask = load_image(mask_path)
+        tmp_mask, self.mask_affine, tmp_shape = self.nifti.load_nifti(mask_path)
+        mask = np.asarray(mask)
+            
+        if verbose:
+            print 'mask shape:', mask.shape
+            
+        if reverse_transpose:
+            mask = np.transpose(mask.astype(np.bool), [2, 1, 0])
+        else:
+            mask = mask.copy().astype(np.bool)
+            
+        self.original_mask = mask.copy()
+        self.flat_mask = mask.copy()
+        self.flat_mask.shape = np.product(mask.shape)
+        
+        if verbose:
+            print 'flat mask shape:', self.flat_mask.shape
+            
+        nmask = np.not_equal(mask, 0).sum()
+        
+        if verbose:
+            print 'mask shape', mask.shape
+        
+        self.trial_mask = np.zeros((ntrs, mask.shape[0], mask.shape[1], mask.shape[2]))
+        
+        if verbose:
+            print 'trial mask shape', self.trial_mask.shape
+        
+        for t in range(ntrs):
+            self.trial_mask[t,:,:,:] = mask
+            
+        self.trial_mask = self.trial_mask.astype(np.bool)   
         
         
         
@@ -786,42 +858,13 @@ class BrainData(DataManager):
                 print 'preserving dimensionality of nifti matrix (nt last)'
         
         image = load_image(nifti)
-        #self.original_img_bool = np.zeros((image.shape[:-1]), np.bool)
-        
-        if mask_path is None:
-            mask = np.ones(image.shape[:-1])
-        else:
-            mask = load_image(mask_path)
-            tmp_mask, self.mask_affine, tmp_shape = self.nifti.load_nifti(mask_path)
-            mask = np.asarray(mask)
             
         if verbose:
             print 'nifti shape:', image.shape
-            print 'mask shape:', mask.shape
             
-        if reverse_transpose:
-            mask = np.transpose(mask.astype(np.bool), [2, 1, 0])
-        else:
-            mask = mask.copy().astype(np.bool)
-            
-        self.original_mask = mask.copy()
-            
-        nmask = np.not_equal(mask, 0).sum()
+        nmask = np.not_equal(self.original_mask, 0).sum()
         
         ntrs = len(selected_trs)
-        
-        print mask.shape
-        
-        self.trial_mask = np.zeros((ntrs, mask.shape[0], mask.shape[1], mask.shape[2]))
-        print self.trial_mask.shape
-        
-        for t in range(ntrs):
-            self.trial_mask[t,:,:,:] = mask
-            
-        self.trial_mask = self.trial_mask.astype(np.bool)
-        print self.trial_mask.shape
-        
-        mask.shape = np.product(mask.shape)
         
         p = np.prod(image.shape[:-1])
         
@@ -841,7 +884,7 @@ class BrainData(DataManager):
             for i in range(ntrials):
                 if len(im) > trial_inds[i]+ntrs+lag:
                     row = im[trial_inds[i]+lag:trial_inds[i]+ntrs+lag].reshape((ntrs,p))
-                    X[i] = row[:,mask]
+                    X[i] = row[:,self.flat_mask]
                     Y[i] = response[i]
             
         else:
@@ -852,7 +895,7 @@ class BrainData(DataManager):
                     row = im[:,:,:,trial_inds[i]+lag:trial_inds[i]+ntrs+lag].reshape((p,ntrs))
                     #print 'row shape', row.shape
                     #print 'row masked shape', row[mask,:].shape
-                    X[i] = row[mask,:]
+                    X[i] = row[self.flat_mask,:]
                     #print 'xi shape', X[i].shape
                     Y[i] = response[i]
             
@@ -883,9 +926,10 @@ class BrainData(DataManager):
         self.trial_mask = self.trial_mask.astype(np.bool)
         print self.trial_mask.shape
     
+            
 
-    def create_design(self, subject_dirs, nifti_name, respvec_name,
-                      mask_path=None, selected_trs=[], lag=2, reverse_transpose=False):
+    def create_design(self, subject_dirs, nifti_name, respvec_name, selected_trs,
+                      mask_path=None, lag=2, reverse_transpose=True):
         
         self.load_niftis_fromdirs(subject_dirs, nifti_name, respvec_name)
         
@@ -894,9 +938,10 @@ class BrainData(DataManager):
             sX, sY = self.masked_data(image, respvec, selected_trs=selected_trs,
                                       mask_path=mask_path, lag=lag, reverse_transpose=reverse_transpose)
             sX.shape = (sX.shape[0], np.prod(sX.shape[1:]))
-            print sX.shape
+            print 'subject X shape:', sX.shape
             self.subject_design[subject] = [np.array(sX), np.array(sY)]
             
+        del(self.subject_data_dict)
             
             
     def create_design_logan_npy(self, subject_npys):
@@ -914,8 +959,8 @@ class BrainData(DataManager):
                 sX.append(i_X)
             self.subject_design[subject] = [np.array(sX), np.array(sY)]
         
+        del(self.subject_data_dict)
         
-            
 
 
             
