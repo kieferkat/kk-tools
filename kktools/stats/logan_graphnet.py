@@ -6,6 +6,7 @@ import scipy.optimize
 from nose.tools import *
 import time
 import h5py
+import simplejson
 import matplotlib
 matplotlib.use('agg')
 import pylab as pl
@@ -137,6 +138,9 @@ class GraphnetInterface(CVObject):
         self.accuracies = testresults
         self.average_accuracy = sum(self.accuracies)/len(self.accuracies)
         print 'Average accuracy: ', self.average_accuracy
+        
+        return self.accuracies, self.average_accuracy
+                
         
         
     def test_graphnet(self, X, Y, coefs):
@@ -310,8 +314,99 @@ class GraphnetInterface(CVObject):
         
         
         
+    class FractalGridsearch(object):
+        
+        def __init__(self):
+            super(FractalGridsearch, self).__init__(savedir=os.getcwd())
+            self.verbose = True
+            self.savedir = savedir
+            self.search_depth = 3
+            
+            self.l1_range = [0.,100.]
+            self.l1_granularity = 0.1
+            
+            self.grid_shrink = 0.5
+            #self.search_second_place = False
+            
+            self.l2 = 100.
+            self.l3 = 1000.
+            
+            self.folds = 5
+            
+            st = time.localtime()
+            timestr = str(st.tm_mon)+'_'+str(st.tm_mday)+'_'+str(st.tm_hour)+'_'+str(st.tm_min)
+            
+            self.logfile_name = 'fgrid_'+timestr+'.json'
+            
+            self.records = {}
+            
+            
+        def generate_l1_values(self, l1_lower, l1_upper, granularity):
+            distance = float(l1_upper)-float(l1_lower)
+            step = distance*granularity
+            
+            l1_values = [l1_lower+(x*step) for x in range(int(round(1./stepin))+1)]
+            
+            if self.verbose:
+                print 'l1_range:', l1_lower, l1_upper
+                print 'distance:', distance
+                print 'granularity:', granularity
+                print 'step size:', step
+                print 'l1 values:', l1_values
+                
+            return l1_values, step
         
         
+        def log_progress(self):
+            
+            jsonpath = os.path.join(self.savedir, self.logfile_name)
+            jfid = open(jsonpath,'w')
+            simplejson.dump(self.records, jfid)
+            jfid.close()
+            
+            
+        def naive_gnet(self, gnet, trial_mask, folds, l1, l2, l3, indices):
+            
+            train_kwargs = {'trial_mask':trial_mask, 'l1':l1, 'l2':l2, 'l3':l3}
+            gnet.setup_crossvalidation(subject_indices=indices, folds=folds)
+            gnet.crossvalidate(train_kwargs, use_memmap=True)
+        
+            
+        def search(self, gnet, trial_mask, indices):
+            
+            self.records['l1_start_range'] = self.l1_range
+            self.records['l2'] = self.l2
+            self.records['l3'] = self.l3
+            self.records['l1_granularity'] = self.l1_granularity
+            self.records['grid_shrink'] = self.grid_shrink
+            self.records['search_depth'] = self.search_depth
+            self.records['folds'] = self.folds
+            
+            current_l1_range, stepsize = self.generate_l1_values(self.l1_range[0],
+                                                                 self.l1_range[1],
+                                                                 self.l1_granularity)
+            
+            l1_upper = l1_range[1]
+            l1_lower = l1_range[0]
+            
+            
+            for level in range(self.search_depth):
+                currec = {}
+                currec['l1_upper'] = l1_upper
+                currec['l1_lower'] = l1_lower
+                currec
+                
+            
+            
+            
+        
+        
+            
+            
+        
+            
+            
+    
         
         
         

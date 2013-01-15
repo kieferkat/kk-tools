@@ -264,11 +264,20 @@ class DataManager(Process):
         del self.subject_design
         
         
-    def X_to_memmap(self, memmap_filepath, empty_X=True):
-        print 'Creating X memmap'
+    def X_to_memmap(self, memmap_filepath, empty_X=True, verbose=True):
+        
+        if verbose: print 'Creating X memmap'
         self.X_memmap_path = memmap_filepath
         self.X_memmap_shape = self.X.shape
         
+        try:
+            if verbose: print 'attempting to delete old memmap'
+            os.remove(self.X_memmap_path)
+        except:
+            if versbose: print 'no memmap to delete'
+            
+        
+        if verbose: print 'writing new memmap...'
         X_memmap = np.memmap(self.X_memmap_path, dtype='float64', mode='w+', shape=self.X_memmap_shape)
         X_memmap[:,:] = self.X[:,:]
         
@@ -286,6 +295,7 @@ class DataManager(Process):
         #self.X = preprocessing.normalize(self.X, axis=1)
         self.X = simple_normalize(self.X, axis=0)
         print 'post-normalization X sum', np.sum(self.X)
+        
         
     def scaleX(self):
         print 'scaling X'

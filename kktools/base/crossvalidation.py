@@ -289,7 +289,7 @@ class Crossvalidation(object):
                 
                 
         return train_dict, test_dict
-                
+        
         
         
     def create_crossvalidation_folds(self, indices_dict=None, folds=None, leave_mod_in=False,
@@ -324,6 +324,7 @@ class Crossvalidation(object):
         
         # find the permutations of the group IDs, leaving one out:
         set_permutations = itertools.combinations(self.cv_sets.keys(), len(self.cv_sets.keys())-1)
+        
         
         self.train_dict, self.test_dict = self.generate_sets(self.cv_sets, set_permutations,
                                                              remainder_keys, leave_mod_in)
