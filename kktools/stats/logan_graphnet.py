@@ -42,6 +42,7 @@ class GraphnetInterface(CVObject):
         
         self.X = getattr(self.data, 'X', None)
         self.Y = getattr(self.data, 'Y', None)
+        self.trial_mask = getattr(self.data, 'trial_mask', None)
         if not self.Y is None:
             self.replace_Y_negative_ones()
         self.indices_dict = getattr(self.data, 'subject_trial_indices', None)
@@ -124,7 +125,7 @@ class GraphnetInterface(CVObject):
             self.prepare_folds(folds=folds, indices_dict=self.subject_indices)
         else:
             print 'no subject indices set, cant setup cv folds'
-            
+                        
             
     def crossvalidate(self, train_kwargs_dict, use_memmap=False):
         
@@ -314,24 +315,25 @@ class GraphnetInterface(CVObject):
         
         
         
-    class FractalGridsearch(object):
+    class Gridsearch(object):
         
         def __init__(self):
-            super(FractalGridsearch, self).__init__(savedir=os.getcwd())
+            super(Gridsearch, self).__init__(savedir=os.getcwd())
             self.verbose = True
             self.savedir = savedir
             self.search_depth = 3
+            self.depth_stepsizes = [10, 4, 1]
+            self.grid_shrink = 0.4
             
-            self.l1_range = [0.,100.]
+            self.l1_range = [0,100]
             self.l1_granularity = 0.1
-            
-            self.grid_shrink = 0.5
-            #self.search_second_place = False
-            
+                        
             self.l2 = 100.
             self.l3 = 1000.
             
             self.folds = 5
+            
+            self.searches = []
             
             st = time.localtime()
             timestr = str(st.tm_mon)+'_'+str(st.tm_mday)+'_'+str(st.tm_hour)+'_'+str(st.tm_min)
@@ -341,11 +343,19 @@ class GraphnetInterface(CVObject):
             self.records = {}
             
             
-        def generate_l1_values(self, l1_lower, l1_upper, granularity):
-            distance = float(l1_upper)-float(l1_lower)
-            step = distance*granularity
+        def generate_l1_values(self, l1_lower, l1_upper, granularity, round_to_int=True,
+                               inclusive_max=True):
             
-            l1_values = [l1_lower+(x*step) for x in range(int(round(1./stepin))+1)]
+            distance = float(l1_upper)-float(l1_lower)
+            
+            step = distance*granularity
+            if round_to_int:
+                step = round(step)
+            
+            if inclusive_max:
+                l1_values = [l1_lower+(x*step) for x in range(int(round(1.*granularity))+1)]
+            else:
+                l1_values = [l1_lower+(x*step) for x in range(int(round(1.*granularity)))]
             
             if self.verbose:
                 print 'l1_range:', l1_lower, l1_upper
@@ -357,6 +367,17 @@ class GraphnetInterface(CVObject):
             return l1_values, step
         
         
+        def simple_generate_l1_range(self, l1min, l1max, stepsize):
+            
+            l1_range = [l1min]
+            while l1_range[-1]+stepsize < l1max:
+                l1_range.append(l1_range[-1]+stepsize)
+            l1_range.append(l1max)
+            
+            return l1_range
+            
+        
+        
         def log_progress(self):
             
             jsonpath = os.path.join(self.savedir, self.logfile_name)
@@ -365,37 +386,124 @@ class GraphnetInterface(CVObject):
             jfid.close()
             
             
-        def naive_gnet(self, gnet, trial_mask, folds, l1, l2, l3, indices):
+        def run_naive_gnet(self, csearch):
             
-            train_kwargs = {'trial_mask':trial_mask, 'l1':l1, 'l2':l2, 'l3':l3}
-            gnet.setup_crossvalidation(subject_indices=indices, folds=folds)
-            gnet.crossvalidate(train_kwargs, use_memmap=True)
+            cparams = csearch['parameters']
+            
+            train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':cparams['l1'],
+                            'l2':cparams['l2'], 'l3':cparams['l3']}
+            
+            self.gnet.setup_crossvalidation(subject_indices=self.gnet.subject_indices, folds=self.folds)
+            accuracies, average_accuracy = self.gnet.crossvalidate(train_kwargs, use_memmap=True)
+            
+            csearch['accuracies'] = accuracies
+            csearch['average_accuracy'] = average_accuracy
+            
+            return csearch
         
             
-        def search(self, gnet, trial_mask, indices):
+        def fractal_l1_search(self, gnet, trial_mask, indices):
             
             self.records['l1_start_range'] = self.l1_range
+            self.records['l1_current_range'] = self.l1_range
             self.records['l2'] = self.l2
             self.records['l3'] = self.l3
             self.records['l1_granularity'] = self.l1_granularity
+            self.records['depth_step_sizes'] = self.depth_stepsizes
             self.records['grid_shrink'] = self.grid_shrink
             self.records['search_depth'] = self.search_depth
             self.records['folds'] = self.folds
-            
-            current_l1_range, stepsize = self.generate_l1_values(self.l1_range[0],
-                                                                 self.l1_range[1],
-                                                                 self.l1_granularity)
-            
-            l1_upper = l1_range[1]
-            l1_lower = l1_range[0]
+            self.records['current_iter'] = 0
+            self.records['current_depth'] = 0
+            self.records['searches'] = self.searches
             
             
-            for level in range(self.search_depth):
-                currec = {}
-                currec['l1_upper'] = l1_upper
-                currec['l1_lower'] = l1_lower
-                currec
+            search_count = 0
+            l1min = self.l1_range[0]
+            l1max = self.l1_range[2]
+            best_acc = 0.
+            best_l1 = 0
+            cur_distance = l1max-l1min
+            
+            for depth, stepsize in zip(range(self.search_depth), self.depth_stepsizes):
                 
+                #cur_l1_range, stepsize = self.generate_l1_values(l1min, l1max, self.l1_granularity)
+                
+                cur_l1_range = self.simple_generate_l1_range(l1min, l1max, stepsize)
+                self.records['current_depth'] = depth
+                
+                for l1 in cur_l1_range:
+                    
+                    cur_params = {'l1':l1, 'l2':self.l2, 'l3':self.l3}
+                    
+                    #check if parameters have already been calculated:
+                    do_search = True
+                    for search in self.searches:
+                        old_params = search['parameters']
+                        if old_params == cur_params:
+                            do_search = False
+                            if self.verbose:
+                                print 'Already completed this search...'
+                                print 'old values:', old_params
+                                print 'new values:', cur_params
+                                
+                    if do_search:
+                        if self.verbose:
+                            print 'Parameters for this search:', cur_params      
+                    
+                        csearch = {}
+                        
+                        csearch['search_iter'] = search_count
+                        self.records['current_iter'] = search_count
+                        search_count += 1
+                        
+                        csearch['parameters'] = cur_params
+                        
+                        if self.verbose:
+                            print '\nPREFORMING NEXT GRAPHNET\n'
+                            print 'search number:', search_count
+                            print 'depth:', depth
+                            print 'l1 range:', cur_l1_range
+                            print 'current l1:', l1
+                            
+                        csearch = self.run_naive_gnet(csearch)
+                        
+                        self.searches.append(csearch)
+                        self.records['searches'] = self.searches
+                        
+                        for srec in self.searches:
+                            cacc = srec['average_accuracy']
+                            if cacc > best_acc:
+                                best_acc = cacc
+                                best_l1 = srec['parameters']['l1']
+                        
+                        self.records['best_acc'] = best_acc
+                        self.records['best_l1'] = best_l1
+                        
+                        self.log_progress()
+                        
+                        
+                # find best accuracy, redefine l1max, l1min:
+
+                new_distance = float(cur_distance)*self.grid_shrink
+                l1min = int(round(float(best_l1)-new_distance/2.))
+                l1max = int(round(float(best_l1)+new_distance/2.))
+                
+                cur_distance = new_distance
+                self.records['l1_current_range'] = [l1min, l1max]
+                        
+                if self.verbose:
+                    print 'best acccuracy for depth:', best_acc
+                    print 'l1 for best accuracy:', best_l1
+                    print 'new l1min:', l1min
+                    print 'new l1max:', l1max
+                    
+                self.log_progress()
+                    
+                
+                
+            
+            
             
             
             
