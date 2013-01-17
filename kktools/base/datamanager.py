@@ -264,24 +264,29 @@ class DataManager(Process):
         del self.subject_design
         
         
-    def X_to_memmap(self, memmap_filepath, empty_X=True, verbose=True):
+    def X_to_memmap(self, memmap_filepath, empty_X=True, verbose=True,
+                    testmode_bypass_overwrite=False):
         
         if verbose: print 'Creating X memmap'
         self.X_memmap_path = memmap_filepath
         self.X_memmap_shape = self.X.shape
         
-        try:
-            if verbose: print 'attempting to delete old memmap'
-            os.remove(self.X_memmap_path)
-        except:
-            if versbose: print 'no memmap to delete'
+        if testmode_bypass_overwrite:
+            print '!!! TEST MODE: BYPASSING MEMMAP OVERWRITE !!!'
+        else:
+            try:
+                if verbose: print 'attempting to delete old memmap...'
+                os.remove(self.X_memmap_path)
+                if verbose: print 'old memmap deleted.'
+            except:
+                if versbose: print 'no memmap to delete'
+                
             
-        
-        if verbose: print 'writing new memmap...'
-        X_memmap = np.memmap(self.X_memmap_path, dtype='float64', mode='w+', shape=self.X_memmap_shape)
-        X_memmap[:,:] = self.X[:,:]
-        
-        del X_memmap
+            if verbose: print 'writing new memmap...'
+            X_memmap = np.memmap(self.X_memmap_path, dtype='float64', mode='w+', shape=self.X_memmap_shape)
+            X_memmap[:,:] = self.X[:,:]
+            
+            del X_memmap
         
         
     def empty_X(self):
