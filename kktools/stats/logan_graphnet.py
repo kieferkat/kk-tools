@@ -141,7 +141,9 @@ class GraphnetInterface(CVObject):
         self.average_accuracy = sum(self.accuracies)/len(self.accuracies)
         print 'Average accuracy: ', self.average_accuracy
         
-        return self.accuracies, self.average_accuracy
+        non_zero_coefs = len([x for x in trainresults if x != 0.])
+        
+        return self.accuracies, self.average_accuracy, non_zero_coefs
                 
         
         
@@ -401,10 +403,11 @@ class Gridsearch(object):
                         'l2':cparams['l2'], 'l3':cparams['l3']}
         
         self.gnet.setup_crossvalidation(subject_indices=self.gnet.subject_indices, folds=self.folds)
-        accuracies, average_accuracy = self.gnet.crossvalidate(train_kwargs, use_memmap=True)
+        accuracies, average_accuracy, nz_coefs = self.gnet.crossvalidate(train_kwargs, use_memmap=True)
         
         csearch['accuracies'] = accuracies
         csearch['average_accuracy'] = average_accuracy
+        csearch['non_zero_coefs'] = nz_coefs
         
         return csearch
     

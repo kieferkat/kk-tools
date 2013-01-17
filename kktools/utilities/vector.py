@@ -56,8 +56,10 @@ class VectorTools(object):
             else:
                 id = vector_name
             id = id.lower()
-            vec_data = vecread(vector)
+            vec_data = self.read(vector)
             vector_dict[id] = vec_data
+            
+            #print vec_data[0:4]
     
                     
         return vector_dict
@@ -73,9 +75,9 @@ class VectorTools(object):
             
             if verbose:
                 print 'Attempting to load vectors for subject:', id
-            vector_dict = vectordir_todict(vecdir, glob_prefix=glob_prefix,
-                                           filename_split_keyinds=filename_split_keyinds,
-                                           filename_split=filename_split, verbose=verbose)
+            vector_dict = self.vectordir_todict(vecdir, glob_prefix=glob_prefix,
+                                                filename_split_keyinds=filename_split_keyinds,
+                                                filename_split=filename_split, verbose=verbose)
             subject_dict[id] = vector_dict
     
         

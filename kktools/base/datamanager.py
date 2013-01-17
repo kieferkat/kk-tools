@@ -362,6 +362,7 @@ class CsvData(DataManager):
         super(CsvData, self).__init__(variable_dict=variable_dict)
         self.csv = CsvTools()
         self.vector = VectorTools()
+        self.afni = AfniWrapper()
         self.independent_dict = {}
         self.dependent_dict = {}
         self.bysubject_data_dict = {}
@@ -380,6 +381,7 @@ class CsvData(DataManager):
         for subject, csvdict in subject_csv_dict.items():
             self.bysubject_data_dict[subject] = self.csv.csv_to_coldict(csvdict)
             
+            
 
     
     
@@ -390,7 +392,7 @@ class CsvData(DataManager):
         if not self._check_variables(required_vars): return False
         
         self.subject_vector_dict = self.vector.subject_vector_dict(self.subject_dirs, tmp_tc_dir)
-        
+                
 
 
     def merge_in_vector_dict(self, subject_vector_dict=None, bysubject_data_dict=None):
@@ -410,6 +412,8 @@ class CsvData(DataManager):
 
         csv_lines = self.csv.read(csv_path)
         self.bysubject_data_dict = self.csv.subjectcsv_to_subjectdict(csv_lines)
+        
+        self.sparse_data_dict = self.bysubject_data_dict.copy()
         
     
     def normalize_columns_within_subject(self, columns):

@@ -588,7 +588,9 @@ class FractionizeMask(AfniFunction):
     def __call__(self, mask_path, dataset_path, anat_path, subject_mask_suffix='r'):
         
         subject_path = os.path.split(dataset_path)[0]
-        mask_name = (os.path.split(mask_path)[1]).split('+')[0]
+        print mask_path
+        mask_name = os.path.split(mask_path)[1].split('+')[0]
+        print mask_name
         
         subject_mask = os.path.join(subject_path, mask_name+subject_mask_suffix+'+orig')
         self._clean(subject_mask+'*')
@@ -615,22 +617,28 @@ class MaskDump(AfniFunction):
         
         subject_path = os.path.split(dataset_path)[0]
         
-        if clean_type(mask_paths) in (list, tuple):
-            for mask in mask_paths:
-                subject_mask = self.fractionize.run(mask, dataset_path, anat_path)
-                self.maskave.run(subject_mask, dataset_path, mask_area_strs=mask_area_strs,
-                                 mask_area_codes=mask_area_codes)
+        #if clean_type(mask_paths) in (list, tuple):
+        #    for mask in mask_paths:
+        #        subject_mask = self.fractionize.run(mask, dataset_path, anat_path)
+        #        self.maskave.run(subject_mask, dataset_path, mask_area_strs=mask_area_strs,
+        #                         mask_area_codes=mask_area_codes)
                 
-        else:
-            subject_mask = self.fractionize.run(mask_paths, dataset_path, anat_path)
-            self.maskave.run(subject_mask, dataset_path, mask_area_strs=mask_area_strs,
-                             mask_area_codes=mask_area_codes)
+        
+        for maskp in mask_paths:
+            subject_mask = self.fractionize(maskp, dataset_path, anat_path)
+            self.maskave(subject_mask, dataset_path, mask_area_strs=mask_area_strs,
+                         mask_area_codes=mask_area_codes)
         
         
     def run_over_subjects(self, subject_dirs=None, functional_name=None, anatomical_name=None,
                           mask_names=None, mask_dir=None, mask_area_strs=['l','r','b'],
                           mask_area_codes=[[1,1],[2,2],[1,2]]):
         
+        self.mask_names = mask_names
+        self.functional_name = functional_name
+        self.anatomical_name = anatomical_name
+        self.mask_dir = mask_dir
+        self.subject_dirs = subject_dirs
         
         for i, mask in enumerate(self.mask_names):
             if not mask.endswith('+tlrc'):
