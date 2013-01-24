@@ -33,6 +33,14 @@ def subjects(max_length=None, topdir=os.getcwd(), prefixes=[], exclude=[],
         return [os.path.split(x)[1] for x in subjdirs]
     else:
         return [os.path.split(x)[1][0:min(max_length,len(os.path.split(x)[1]))] for x in subjdirs]
+        
+def consprint(input_list, python=True, bash=True):
+    
+    if python:
+        print '['+','.join([str(x) for x in input_list])+']'
+        
+    if bash:
+        print '( '+' '.join([str(x) for x in input_list])+' )'
 
         
     

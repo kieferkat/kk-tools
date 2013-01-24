@@ -99,6 +99,8 @@ class NiftiTools(object):
         
     
     def save_nifti(self, data, affine, filepath):
+        if not filepath.endswith('.nii'):
+            filepath = filepath+'.nii'
         glob_remove(filepath)
         nii = nib.Nifti1Image(data, affine)
         nii.to_filename(filepath)

@@ -13,6 +13,9 @@ import pylab as pl
 pl.ion()
 import rpy2
 from rpy2 import robjects as rpy
+import copy
+import random
+from pprint import pprint
 
 from optimization.cwpath import cwpath, strategy
 from optimization.cwpath.cwpath import inner1d
@@ -105,15 +108,16 @@ class GraphnetInterface(CVObject):
     
     def regression_type_selector(self, l1, l2, l3, delta, svmdelta):
         print l1, l2, l3, delta, svmdelta
-        if (l1 != None) and (l2 != None) and (l3 != None) and (delta != None) and (svmdelta != None):
+        l1b = all(l1)
+        if (l1b != False) and (l2 != None) and (l3 != None) and (delta != None) and (svmdelta != None):
             return 'HuberSVMGraphNet'
-        elif (l1 != None) and (l2 != None) and (l3 != None) and (delta != None):
+        elif (l1b != False) and (l2 != None) and (l3 != None) and (delta != None):
             return 'RobustGraphNet'
-        elif (l1 != None) and (l2 != None) and (l3 != None):
+        elif (l1b != False) and (l2 != None) and (l3 != None):
             return 'NaiveGraphNet'
-        elif (l1 != None) and (l2 != None):
+        elif (l1b != False) and (l2 != None):
             return 'NaiveENet'
-        elif (l1 != None):
+        elif (l1b != False):
             return 'Lasso'
         else:
             return None
@@ -138,45 +142,65 @@ class GraphnetInterface(CVObject):
                                                                   use_memmap=use_memmap)
         
         self.accuracies = testresults
-        self.average_accuracy = sum(self.accuracies)/len(self.accuracies)
-        print 'Average accuracy: ', self.average_accuracy
+        self.average_accuracies = []
+        for i in range(len(self.accuracies[0])):
+            accs = []
+            for j in range(len(self.accuracies)):
+                accs.append(self.accuracies[j][i])
+            self.average_accuracies.append(sum(accs)/len(accs))
+                
+        #self.average_accuracies = [sum(x)/len(x) for x in self.accuracies]
+        print 'Average accuracies: ', self.average_accuracies
         
-        non_zero_coefs = len([x for x in trainresults if x != 0.])
+        # trainresults: list of coefficients for each l1 by fold
+        # AS OF NOW JUST TAKING THE COEFS FOR ONE OF THE FOLDS:
+        sub_tresults = trainresults[0]
+        self.non_zero_coefs = [len([x for x in tr if x != 0.]) for tr in sub_tresults]
         
-        return self.accuracies, self.average_accuracy, non_zero_coefs
+        return self.accuracies, self.average_accuracies, self.non_zero_coefs
                 
         
         
     def test_graphnet(self, X, Y, coefs):
         
         X = simple_normalize(X)
+        accuracies = []
         
-        correct = []
-        print 'Checking accuracy for test group'
-        
-        if self.problemkey == 'RobustGraphNet':
-            coefs = coefs[:-self.trainX_shape[0]]
-        
-        for trial, outcome in zip(X, Y):
-            predict = trial*coefs
-            print np.sum(predict)
-            Ypredsign = np.sign(np.sum(predict))
-            if Ypredsign < 0.:
-                Ypredsign = 0.
-            else:
-                Ypredsign = 1.
-            print Ypredsign, outcome, (Ypredsign == outcome)
-            correct.append(Ypredsign == outcome)
+        for i, coefset in enumerate(coefs):
             
-        fold_accuracy = np.sum(correct) * 1. / len(correct)
-        
-        print 'fold accuracy: ', fold_accuracy
-        return fold_accuracy
+            correct = []
+            print 'Checking accuracy for test group'
+            
+            if self.problemkey == 'RobustGraphNet':
+                coefset = coefset[:-self.trainX_shape[0]]
+            
+            for trial, outcome in zip(X, Y):
+                predict = trial*coefset
+                print np.sum(predict)
+                Ypredsign = np.sign(np.sum(predict))
+                if Ypredsign < 0.:
+                    Ypredsign = 0.
+                else:
+                    Ypredsign = 1.
+                print Ypredsign, outcome, (Ypredsign == outcome)
+                correct.append(Ypredsign == outcome)
+                
+            fold_accuracy = np.sum(correct) * 1. / len(correct)
+            
+            print 'coef number:', i
+            print 'fold accuracy: ', fold_accuracy
+            accuracies.append(fold_accuracy)
+            
+            
+        return accuracies
     
     
     def train_graphnet(self, X, Y, trial_mask=None, G=None, l1=None, l2=None, l3=None, delta=None,
                       svmdelta=None, initial=None, adaptive=False, svm=False,
                       scipy_compare=False, tol=1e-5):
+                
+        if not type(l1) in [list, tuple]:
+            l1 = [l1]
                 
         X = simple_normalize(X)
         
@@ -203,32 +227,32 @@ class GraphnetInterface(CVObject):
             problemtype = graphnet.RobustGraphNet
             print 'Robust GraphNet with penalties (l1, l2, l3, delta): ', l1, l2, l3, delta
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=[l1], l2=l2, l3=l3, delta=delta)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta)
         
         elif problemkey is 'HuberSVMGraphNet':
             problemtype = graphnet.GraphSVM
             print 'HuberSVM GraphNet with penalties (l1, l2, l3, delta): ', l1, l2, l3, delta
             Y = 2*np.round(np.random.uniform(0, 1, len(Y)))-1
             l = cwpath.CoordWise((X, Y, A), problemtype)
-            l.problem.assign_penalty(path_key='l1', l1=[l1], l2=l2, l3=l3, delta=delta)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta)
             
         elif problemkey is 'NaiveGraphNet':
             problemtype = graphnet.NaiveGraphNet
             print 'Testing GraphNet with penalties (l1, l2, l3): ', l1, l2, l3
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=[l1], l2=l2, l3=l3)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3)
             
         elif problemkey is 'NaiveENet':
             problemtype = graphnet.NaiveENet
             print 'Testing ENET with penalties (l1, l2): ', l1, l2
             l = cwpath.CoordWise((X, Y), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=[l1], l2=l2)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2)
             
         elif problemkey is 'Lasso':
             problemtype = graphnet.Lasso
             print 'Testing LASSO with penalty (l1): ', l1
             l = cwpath.CoordWise((X, Y), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=[l1])
+            l.problem.assign_penalty(path_key='l1', l1=l1)
             
         else:
             print 'Incorrect parameters set (no problem key).'
@@ -315,7 +339,7 @@ class GraphnetInterface(CVObject):
                 
             print '\t---> Coordinate-wise and Scipy optimization agree.'
             
-        return coefficients[0]
+        return coefficients
                 
         
         
@@ -394,25 +418,70 @@ class Gridsearch(object):
         jfid.close()
         
         
-    def run_naive_gnet(self, csearch):
+    def run_naive_gnet(self, csearch, l1_list=None):
         
         cparams = csearch['parameters']
         
-        print cparams        
-        train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':cparams['l1'],
-                        'l2':cparams['l2'], 'l3':cparams['l3']}
+        print cparams
+        
+        if l1_list:
+            print 'l1s:',l1_list
+            train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':l1_list,
+                            'l2':cparams['l2'], 'l3':cparams['l3']}
+        else:
+            train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':cparams['l1'],
+                            'l2':cparams['l2'], 'l3':cparams['l3']}
+            
         
         self.gnet.setup_crossvalidation(subject_indices=self.gnet.subject_indices, folds=self.folds)
-        accuracies, average_accuracy, nz_coefs = self.gnet.crossvalidate(train_kwargs, use_memmap=True)
         
-        csearch['accuracies'] = accuracies
-        csearch['average_accuracy'] = average_accuracy
-        csearch['non_zero_coefs'] = nz_coefs
+        # REAL:
+        accuracies, average_accuracies, nz_coefs = self.gnet.crossvalidate(train_kwargs, use_memmap=True)
         
-        return csearch
+        # TEST:
+        #accuracies = [[random.random() for x in range(len(l1_list))] for x in range(5)]
+        #average_accuracies = []
+        #for i in range(len(accuracies[0])):
+        #    accs = []
+        #    for j in range(len(accuracies)):
+        #        accs.append(accuracies[j][i])
+        #    average_accuracies.append(sum(accs)/len(accs))
+        #nz_coefs = [random.randint(0,1000) for x in range(len(l1_list))]
+        
+        
+        self.accuracies = accuracies
+        self.average_accuracies = average_accuracies
+        self.non_zero_coefs = nz_coefs
+        
+        if l1_list:
+            self.csearches = []
+            for ind, l1 in enumerate(l1_list):
+                nsearch = {}
+                nsearch['parameters'] = {'l1':l1, 'l2':cparams['l2'], 'l3':cparams['l3']}
+                nsearch['parameters']['l1'] = l1
+                group_accuracies = []
+                for i in range(len(self.accuracies)):
+                    group_accuracies.append(self.accuracies[i][ind])
+                nsearch['accuracies'] = group_accuracies
+                nsearch['average_accuracy'] = average_accuracies[ind]
+                nsearch['non_zero_coefs'] = nz_coefs[ind]
+                nsearch['search_iter'] = csearch['search_iter'] + ind
+                
+                #pprint(nsearch)
+                
+                self.csearches.append(nsearch)
+            return self.csearches
+        else:  
+            csearch['accuracies'] = accuracies[0]
+            csearch['average_accuracy'] = average_accuracies[0]
+            csearch['non_zero_coefs'] = nz_coefs[0]
+            return csearch
+        
+        
+        
     
         
-    def fractal_l1_search(self, gnet):
+    def fractal_l1_search(self, gnet, graphnet_l1_multisearch=True, reverse_range=True):
         
         self.gnet = gnet
         
@@ -442,59 +511,102 @@ class Gridsearch(object):
             #cur_l1_range, stepsize = self.generate_l1_values(l1min, l1max, self.l1_granularity)
             
             cur_l1_range = self.simple_generate_l1_range(l1min, l1max, stepsize)
+            
+            if reverse_range:
+                cur_l1_range.reverse()
+            
             self.records['current_depth'] = depth
             
-            for l1 in cur_l1_range:
+            if graphnet_l1_multisearch:
                 
-                cur_params = {'l1':l1, 'l2':self.l2, 'l3':self.l3}
+                cur_params = {'l1':[], 'l2':self.l2, 'l3':self.l3}
                 
-                #check if parameters have already been calculated:
-                do_search = True
-                for search in self.searches:
-                    old_params = search['parameters']
-                    if old_params == cur_params:
-                        do_search = False
-                        if self.verbose:
-                            print 'Already completed this search...'
-                            print 'old values:', old_params
-                            print 'new values:', cur_params
-                            
-                if do_search:
-                    if self.verbose:
-                        print 'Parameters for this search:', cur_params      
+                csearch = {}
+                    
+                csearch['search_iter'] = search_count
+                self.records['current_iter'] = search_count
                 
-                    csearch = {}
+                csearch['parameters'] = cur_params
+                
+                if self.verbose:
+                    print '\nPREFORMING NEXT MULTI-SEARCH GRAPHNET\n'
+                    print 'depth:', depth
+                    print 'l1 range:', cur_l1_range
                     
-                    csearch['search_iter'] = search_count
-                    self.records['current_iter'] = search_count
-                    
-                    csearch['parameters'] = cur_params
-                    
-                    if self.verbose:
-                        print '\nPREFORMING NEXT GRAPHNET\n'
-                        print 'search number:', search_count
-                        print 'depth:', depth
-                        print 'l1 range:', cur_l1_range
-                        print 'current l1:', l1
-                        print 'best acccuracy:', best_acc
-                        print 'l1 for best accuracy:', best_l1
-                        
-                    csearch = self.run_naive_gnet(csearch)
-                    
-                    self.searches.append(csearch)
-                    self.records['searches'] = self.searches
-                    
-                    for srec in self.searches:
-                        cacc = srec['average_accuracy']
-                        if cacc > best_acc:
-                            best_acc = cacc
-                            best_l1 = srec['parameters']['l1']
-                    
-                    self.records['best_acc'] = best_acc
-                    self.records['best_l1'] = best_l1
-                    
+                csearches = self.run_naive_gnet(csearch, l1_list=cur_l1_range)
+                
+                for cs in csearches:
+                    self.searches.append(cs)
                     search_count += 1
-                    self.log_progress()
+                self.records['current_iter'] = search_count
+                self.records['searches'] = self.searches
+                
+                for srec in self.searches:
+                    cacc = srec['average_accuracy']
+                    if cacc > best_acc:
+                        best_acc = cacc
+                        best_l1 = srec['parameters']['l1']
+                
+                self.records['best_acc'] = best_acc
+                self.records['best_l1'] = best_l1
+                
+                
+                self.log_progress()
+                
+            
+            else:
+                
+                for l1 in cur_l1_range:
+                
+                    cur_params = {'l1':l1, 'l2':self.l2, 'l3':self.l3}
+                    
+                    #check if parameters have already been calculated:
+                    do_search = True
+                    for search in self.searches:
+                        old_params = search['parameters']
+                        if old_params == cur_params:
+                            do_search = False
+                            if self.verbose:
+                                print 'Already completed this search...'
+                                print 'old values:', old_params
+                                print 'new values:', cur_params
+                                
+                    if do_search:
+                        if self.verbose:
+                            print 'Parameters for this search:', cur_params      
+                    
+                        csearch = {}
+                        
+                        csearch['search_iter'] = search_count
+                        self.records['current_iter'] = search_count
+                        
+                        csearch['parameters'] = cur_params
+                        
+                        if self.verbose:
+                            print '\nPREFORMING NEXT GRAPHNET\n'
+                            print 'search number:', search_count
+                            print 'depth:', depth
+                            print 'l1 range:', cur_l1_range
+                            print 'current l1:', l1
+                            print 'best acccuracy:', best_acc
+                            print 'l1 for best accuracy:', best_l1
+                            
+                        csearch = self.run_naive_gnet(csearch)
+                        
+                        self.searches.append(csearch)
+                        self.records['searches'] = self.searches
+                        
+                        for srec in self.searches:
+                            cacc = srec['average_accuracy']
+                            if cacc > best_acc:
+                                best_acc = cacc
+                                best_l1 = srec['parameters']['l1']
+                        
+                        self.records['best_acc'] = best_acc
+                        self.records['best_l1'] = best_l1
+                        
+                        search_count += 1
+                        self.log_progress()
                     
                     
                     

@@ -279,7 +279,7 @@ class DataManager(Process):
                 os.remove(self.X_memmap_path)
                 if verbose: print 'old memmap deleted.'
             except:
-                if versbose: print 'no memmap to delete'
+                if verbose: print 'no memmap to delete'
                 
             
             if verbose: print 'writing new memmap...'

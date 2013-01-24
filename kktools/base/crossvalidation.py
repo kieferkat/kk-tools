@@ -194,7 +194,11 @@ class CVObject(Process):
             if verbose:
                 print 'Crossvalidating next group.'
                 
-            #nothing = raw_input('Pre-crossval checkpoint.')
+            # assert independence of indices:
+            for train_index in trainX:
+                assert train_index not in testX
+            for dependent_index in trainY:
+                assert dependent_index not in testY
                 
             if not use_memmap:
                 subX = self.subselect(fullX, trainX)
@@ -225,7 +229,8 @@ class CVObject(Process):
             trainresults.append(trainresult)
             testresults.append(testresult)
             
-            print sum(testresults)/len(testresults)
+            #if verbose:
+            #    print sum(testresults)/len(testresults)
             
         return trainresults, testresults
     
@@ -243,6 +248,22 @@ class Crossvalidation(object):
     def chunker(self, indices, chunksize):
         # chunker splits indices into equal sized groups, returns dict with IDs:
         groups = [indices[i:i+chunksize] for i in range(0, len(indices), chunksize)]
+        
+        # assert that each group is the same size:
+        for g in groups:
+            assert len(g) == chunksize
+            
+        # assert that indices are not repeated in other groups:
+        # for each group:
+        for i, g in enumerate(groups):
+            # for each group not the same number as g:
+            for j, o in enumerate(groups):
+                if j != i:
+                    # for each item in the other group:
+                    for o_x in o:
+                        # assert the item is not in the original group:
+                        assert o_x not in g
+        
         cv_sets = {}
         for i, group in enumerate(groups):
             cv_sets[i] = group
@@ -285,8 +306,12 @@ class Crossvalidation(object):
             for te_key in testing_subjects:
                 test_dict[p].extend(self.indices_dict[te_key])
                 
-            self.test_subject_byfold.append(testing_subjects)
+            # assert that there are no repeated indices in the training and
+            # testing sets for this fold:
+            for test_index in test_dict[p]:
+                assert test_index not in train_dict[p]
                 
+            self.test_subject_byfold.append(testing_subjects)
                 
         return train_dict, test_dict
         
@@ -319,8 +344,14 @@ class Crossvalidation(object):
         
         divisible_keys, remainder_keys = self.excise_remainder(index_keys, self.folds)
         
+        for rk in remainder_keys:
+            assert rk not in divisible_keys
+        
         # cv_sets is a dict with group IDs and indices:
         self.cv_sets = self.chunker(divisible_keys, len(divisible_keys)/self.folds)
+        
+        # ensure that the number of sets is equal to the number of folds:
+        assert len(self.cv_sets) == self.folds
         
         # find the permutations of the group IDs, leaving one out:
         set_permutations = itertools.combinations(self.cv_sets.keys(), len(self.cv_sets.keys())-1)
