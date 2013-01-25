@@ -1,6 +1,6 @@
 
 
-import sys, os, time
+import sys, os
 import numpy as np
 import scipy.optimize
 from nose.tools import *
@@ -398,6 +398,8 @@ class Gridsearch(object):
     
     def simple_generate_l1_range(self, l1min, l1max, stepsize, no_zero=True):
         
+        l1min, l1max, stepsize = float(l1min), float(l1max), float(stepsize)
+        
         l1_range = [l1min]
         while l1_range[-1]+stepsize < l1max:
             l1_range.append(l1_range[-1]+stepsize)
@@ -481,10 +483,11 @@ class Gridsearch(object):
         
     
         
-    def fractal_l1_search(self, gnet, graphnet_l1_multisearch=True, reverse_range=True):
+    def fractal_l1_search(self, gnet, graphnet_l1_multisearch=True, reverse_range=True,
+                          name='graphnet'):
         
         self.gnet = gnet
-        
+        self.records['title'] = name
         self.records['l1_start_range'] = self.l1_range
         self.records['l1_current_range'] = self.l1_range
         self.records['l2'] = self.l2
