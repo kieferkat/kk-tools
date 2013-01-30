@@ -9,6 +9,7 @@ import time
 import numpy as np
 import scipy as sp
 import nibabel as nib
+import time
 
 from process import Process
 from nifti import NiftiTools
@@ -27,6 +28,7 @@ class DataManager(Process):
     
     def __init__(self, variable_dict=None):
         super(DataManager, self).__init__(variable_dict=variable_dict)
+        self.verbose = True
         
             
             
@@ -795,16 +797,20 @@ class BrainData(DataManager):
         if affine is None:
             affine = self.mask_affine
             
+        if self.verbose:
+            print 'erasing old files with prefix:', nifti_filename[:-4]
+            
+        glob_remove(nifti_filename[:-4])
+            
         self.nifti.save_nifti(unmasked, affine, nifti_filename)
         
-        #THEN:
-        #3drefit -view tlrc ...
+        time.sleep(0.25)
         
-        #self.nifti.convert_to_afni(nifti_filename, nifti_filename[:-4])
+        self.nifti.convert_to_afni(nifti_filename, nifti_filename[:-4])
         
-        #self.nifti.adwarp_to_template_talairach(nifti_filename[:-4]+'+orig', nifti_filename[:-4],
-        #                                        talairach_template_path)
+        time.sleep(0.25)
         
+        subprocess.call(['3drefit','-view','tlrc',nifti_filename[:-4]+'+orig.'])
         
         
         
@@ -822,9 +828,11 @@ class BrainData(DataManager):
         mask = load_image(mask_path)
         tmp_mask, self.mask_affine, tmp_shape = self.nifti.load_nifti(mask_path)
         mask = np.asarray(mask)
+        self.raw_affine = self.mask_affine
             
         if verbose:
             print 'mask shape:', mask.shape
+        self.mask_shape = mask.shape
             
         if reverse_transpose:
             mask = np.transpose(mask.astype(np.bool), [2, 1, 0])
@@ -897,12 +905,20 @@ class BrainData(DataManager):
             X = np.zeros((ntrials, nmask, ntrs))
         Y = np.zeros(ntrials)
         
+        reselect_trs = [x-1 for x in selected_trs]
+        
         if reverse_transpose:
             im = np.transpose(np.asarray(image), [3, 2, 1, 0])
         
             for i in range(ntrials):
-                if len(im) > trial_inds[i]+ntrs+lag:
-                    row = im[trial_inds[i]+lag:trial_inds[i]+ntrs+lag].reshape((ntrs,p))
+                if len(im) > trial_inds[i]+reselect_trs[-1]+lag:
+                    # OLD VERSION: could only do a continuous range
+                    #row = im[trial_inds[i]+reselect_trs[0]+lag:trial_inds[i]+reselect_trs[-1]+1+lag].reshape((ntrs,p))
+                    
+                    # NEW VERSION: uses list comprehension for any index range
+                    row_inds = [trial_inds[i]+lag+x for x in reselect_trs]
+                    row = im[row_inds].reshape((ntrs,p))
+                    
                     X[i] = row[:,self.flat_mask]
                     Y[i] = response[i]
             
@@ -910,12 +926,15 @@ class BrainData(DataManager):
             im = np.asarray(image)
             
             for i in range(ntrials):
-                if im.shape[3] > trial_inds[i]+ntrs+lag:
-                    row = im[:,:,:,trial_inds[i]+lag:trial_inds[i]+ntrs+lag].reshape((p,ntrs))
-                    #print 'row shape', row.shape
-                    #print 'row masked shape', row[mask,:].shape
+                if im.shape[3] > trial_inds[i]+reselect_trs[-1]+lag:
+                    # OLD VERSION: could only do a continuous range
+                    #row = im[:,:,:,trial_inds[i]+reselect_trs[0]+lag:trial_inds[i]+reselect_trs[-1]+1+lag].reshape((p,ntrs))
+
+                    # NEW VERSION: uses list comprehension for any index range
+                    row_inds = [trial_inds[i]+lag+x for x in reselect_trs]
+                    row = im[:,:,:,row_inds].reshape((p,ntrs))
+                    
                     X[i] = row[self.flat_mask,:]
-                    #print 'xi shape', X[i].shape
                     Y[i] = response[i]
             
         return X, Y
@@ -949,6 +968,8 @@ class BrainData(DataManager):
 
     def create_design(self, subject_dirs, nifti_name, respvec_name, selected_trs,
                       mask_path=None, lag=2, reverse_transpose=True):
+        
+        self.selected_trs = selected_trs
         
         self.load_niftis_fromdirs(subject_dirs, nifti_name, respvec_name)
         

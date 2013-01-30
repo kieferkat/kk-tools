@@ -7,6 +7,7 @@ from ..utilities.csv import CsvTools
 from regression import Regression
 from sklearn.pls import PLSCanonical, PLSRegression, CCA
 from threshold import threshold_by_pvalue
+from normalize import simple_normalize
 
 
 
@@ -46,19 +47,23 @@ class PLS(Regression):
     
     def pls_train(self, X, Y, verbose=True):
         
+        Xn = simple_normalize(X)
+        
         pls = PLSRegression()
         
         if verbose:
             print 'fitting canonical pls...'
             
-        pls.fit(X, Y)
+        pls.fit(Xn, Y)
         
         return pls
     
     
     def pls_test(self, X, Y, pls):
         
-        predicted_Y = [x[0] for x in pls.predict(X)]
+        Xn = simple_normalize(X)
+        
+        predicted_Y = [x[0] for x in pls.predict(Xn)]
         
         pred_Y_sign = np.sign(predicted_Y)
         Y_sign = np.sign(Y)

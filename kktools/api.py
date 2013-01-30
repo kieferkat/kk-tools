@@ -9,6 +9,7 @@ from afni.functions import AfniWrapper
 from afni.regana import RegAnaMaker
 
 from stats.linearsvm import ScikitsSVM
+from stats.pls import PLS
 from stats.regression import LogisticRegression
 from stats.genetic import GeneticAlgorithm
 #from stats.logan_graphnet import GraphnetInterface

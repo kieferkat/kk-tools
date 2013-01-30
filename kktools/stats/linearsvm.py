@@ -29,6 +29,7 @@ class ScikitsSVM(CVObject):
         
             
     def fit_svc(self, X, Y, cache_size=5000, class_weight='auto'):
+        X = simple_normalize(X)
         clf = svm.SVC(cache_size=cache_size, class_weight=class_weight)
         clf.fit(X, Y)
         return clf
@@ -36,6 +37,7 @@ class ScikitsSVM(CVObject):
     
     def fit_linearsvc(self, X, Y, class_weight='auto'):
         print 'fitting linearsvm'
+        X = simple_normalize(X)
         clf = svm.LinearSVC(class_weight=class_weight)
         clf.fit(X, Y)
         return clf
@@ -59,7 +61,7 @@ class ScikitsSVM(CVObject):
     def train_svm(self, X, Y):
         
         print 'Training next group...'
-        X = simple_normalize(X)
+        #X = simple_normalize(X)
         clf = self.fit_linearsvc(X, Y)
         return clf
     
@@ -84,32 +86,32 @@ class ScikitsSVM(CVObject):
         
         
         
-    def output_maps(self, nifti_filepath, threshold=0.01, two_tail=True,
-                    threshold_type='pvalue'):
+    def output_maps(self, X, Y, time_points, nifti_filepath, threshold=0.01,
+                    two_tail=True, verbose=True):
         
         if not nifti_filepath.endswith('.nii'):
             nifti_filepath = nifti_filepath+'.nii'
-        
-        print 'Normalizing X matrix...'
-        Xnorm = simple_normalize(self.X)
-        print 'Classifying with linear svm...'
-        clf = self.fit_linearsvc(Xnorm, self.Y)
-        print 'Thresholding and dumping coefficients to file...'
+            
+        if verbose:
+            print 'fitting to output...'
+            
+        clf = self.fit_linearsvc(X, Y)
         self.coefs = clf.coef_[0]
         
-        if threshold_type == 'pvalue':
-            thresholded_coefs = threshold_by_pvalue(self.coefs, threshold, two_tail=two_tail)
-        elif threshold_type == 'raw_percentage':
-            thresholded_coefs = threshold_by_rawrange(self.coefs, threshold, two_tail=two_tail)
+        thresholded_coefs = threshold_by_pvalue(self.coefs, threshold, two_tail=two_tail)
         
-        self.nifti.output_nifti_thrumask(thresholded_coefs, self.data.trial_mask,
-                                         self.data.mask_shape, len(self.data.selected_trs),
-                                         self.data.raw_affine, nifti_filepath)
+        if verbose:
+            print 'reshaping the coefs to original brain shape...'
+            
+        unmasked = self.data.unmask_Xcoefs(thresholded_coefs, time_points, verbose=verbose)
         
-        self.nifti.convert_to_afni(nifti_filepath, nifti_filepath[:-4])
-        self.nifti.adwarp_to_template_talairach(nifti_filepath[:-4]+'+orig', nifti_filepath[:-4]+'+orig',
-                                                self.data.talairach_template_path,
-                                                self.data.dxyz)
+        if verbose:
+            print 'saving nifti to filename:', nifti_filepath
+            
+        self.data.save_unmasked_coefs(unmasked, nifti_filepath)
+        
+        
+    
     
     
                 
