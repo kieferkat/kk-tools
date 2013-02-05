@@ -8,7 +8,7 @@ from base.variables import Variables
 from afni.functions import AfniWrapper
 from afni.regana import RegAnaMaker
 
-from stats.linearsvm import ScikitsSVM
+from stats.linearsvm import ScikitsSVM, SVMRFE
 from stats.pls import PLS
 from stats.regression import LogisticRegression
 from stats.genetic import GeneticAlgorithm

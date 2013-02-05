@@ -5,6 +5,7 @@ import random
 import itertools
 import nibabel as nib
 import scipy.stats as stats
+from pprint import pprint
 from ..base.crossvalidation import CVObject
 from ..base.nifti import NiftiTools
 from normalize import simple_normalize
@@ -133,67 +134,109 @@ class SVMRFE(CVObject):
         
         
     def normalize_xset(self, Xset):
+        if self.verbose:
+            print 'normalizing X...'
         Xnormed = simple_normalize(Xset)
         return Xnormed
     
     
     def initialize_xmap(self, Xfull):
+        if self.verbose:
+            print 'initializing xmap, use_inds...'
         xmap = np.ones(Xfull.shape[1])
         self.full_xmap = xmap
         self.current_xmap = xmap
-        self.use_inds = np.where(self.current_xmap == 1)
+        self.use_inds = np.where(self.current_xmap == 1)[0]
+        
+        if self.verbose:
+            print 'xmap shape:', self.full_xmap.shape
+            print 'current xmap shape', self.current_xmap.shape
+            print 'use inds:', self.use_inds
     
     
     def justify_removal_inds(self, remove_inds):
-        xmap_active = np.where(self.current_xmap == 1)
+        if self.verbose:
+            print 'justifying removal inds with xmap...'
+        xmap_active = np.where(self.current_xmap == 1)[0]
         return xmap_active[remove_inds]
     
     
     def excise_from_xmap(self, justified_remove_inds):
+        if self.verbose:
+            print 'setting xmap remove inds to zero...'
         self.current_xmap[justified_remove_inds] = 0.
-        self.use_inds = np.where(self.current_xmap == 1.)
+        self.use_inds = np.where(self.current_xmap == 1.)[0]
+        
+        if self.verbose:
+            print 'new use inds length:', len(self.use_inds)
         
     
-    def subselect(self, X, Y):
-        return X[self.use_inds], Y[self.use_inds]
+    def subselect(self, X):
+        if self.verbose:
+            print 'subselecting new X...'
+        return X[:,self.use_inds]
         
     
     def place_coefs(self, coefs):
+        if self.verbose:
+            print 'placing coefs with xmap...'
         coefmap = np.zeros(self.current_xmap.shape)
         coefmap[self.current_xmap.astype(np.bool)] = np.squeeze(np.array(coefs))
         return coefmap
     
     
     def determine_weak_inds(self, coefs):
+        if self.verbose:
+            print 'Determining weak inds to cut...'
         inds = range(len(coefs))
         abs_coefs = np.abs(coefs)
         coefs_inds = zip(abs_coefs, inds)
         ranked = sorted(coefs_inds, key=lambda x: x[0])
-        inds_to_remove = [ranked[i][1] for i in range(self.remove_per_iteration)]
+        
+        if self.Xuse.shape[1]-self.remove_per_iteration > self.stop_length:
+            to_remove = self.remove_per_iteration
+        else:
+            to_remove = self.Xuse.shape[1]-self.stop_length
+        
+        inds_to_remove = [ranked[i][1] for i in range(int(to_remove))]
+        
+        if self.verbose:
+            print 'removal inds length:', len(inds_to_remove)
+        
         return inds_to_remove
     
     
     def initialize_removal(self):
         
         if self.removal_type == 'amount':
-            self.remove_per_iteration = self.removal_coef
+            self.remove_per_iteration = int(self.removal_coef)
         elif self.removal_type == 'percent':
             coef_len = len(self.full_xmap)
-            self.remove_per_iteration = round(float(coef_len)*self.removal_coef)
+            self.remove_per_iteration = int(round(float(coef_len)*self.removal_coef))
+            
+        if self.verbose:
+            print 'removal type:', self.removal_type
+            print 'removal amount:', self.remove_per_iteration
 
 
     def initialize_stop_condition(self):
         
         if self.stop_type == 'amount':
-            self.stop_length = self.stop_coef
+            self.stop_length = int(self.stop_coef)
         elif self.stop_type == 'percent':
             coef_len = len(self.full_xmap)
-            self.stop_length = round(float(coef_len)*self.stop_coef)
+            self.stop_length = int(round(float(coef_len)*self.stop_coef))
+            
+        if self.verbose:
+            print 'stop type:', self.stop_type
+            print 'stop length:', self.stop_length
     
     
     def initialize(self, X, removal_criterion='amount', removal_coef=25,
                    stop_criterion='percent', stop_coef=0.05):
         
+        if self.verbose:
+            print 'PREFORMING INITIALIZATIONS...\n'
         self.initialize_xmap(X)
         
         self.removal_type = removal_criterion
@@ -211,18 +254,22 @@ class SVMRFE(CVObject):
         self.Xuse = Xnorm.copy()
         self.Yuse = Y.copy()
         
-        while len(self.use_inds) >= self.stop_length:
+        if self.verbose:
+            print 'Xnorm shape:', Xnorm.shape
+        
+        while len(self.use_inds) > self.stop_length:
             
             self.current_coefs = self.fit_linearsvc(self.Xuse, self.Yuse)
             inds_to_remove = self.determine_weak_inds(self.current_coefs)
             justified_inds = self.justify_removal_inds(inds_to_remove)
             self.excise_from_xmap(justified_inds)
-            self.Xuse, self.Yuse = self.subselect(Xnorm, Y)
+            self.Xuse = self.subselect(Xnorm)
             
             if self.verbose:
+                print 'stop length:', self.stop_length
                 print 'current coef length:', len(self.current_coefs)
                 print 'stop length condition:', self.stop_length
-                print 'next useable X:', len(self.Xuse)
+                print 'next useable X:', self.Xuse.shape[1]
                 
         if self.verbose:
             print 'final run...'
@@ -234,7 +281,7 @@ class SVMRFE(CVObject):
             
                 
     
-    def output_maps(self, X, Y, time_points, nifti_filepath):
+    def output_maps(self, time_points, nifti_filepath):
         
         if not nifti_filepath.endswith('.nii'):
             nifti_filepath = nifti_filepath+'.nii'
