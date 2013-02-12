@@ -84,6 +84,7 @@ class ScikitsSVM(CVObject):
         self.fold_accuracies = testresults
         self.average_accuracy = sum(self.fold_accuracies)/len(self.fold_accuracies)
         print 'Average accuracy: ', self.average_accuracy
+        return self.average_accuracy
         
         
         
