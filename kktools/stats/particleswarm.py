@@ -269,7 +269,7 @@ class ParticleSwarm(object):
                     particles[i] = self.create_particle(i, [i-1, 0],
                                                         particle_type)
                 else:
-                    particlesp[i] = self.create_particle(i, [i-1, i+1],
+                    particles[i] = self.create_particle(i, [i-1, i+1],
                                                         particle_type)
                     
         elif neighborhood_type == 'wheel':
