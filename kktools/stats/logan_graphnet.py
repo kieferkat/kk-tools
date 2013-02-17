@@ -351,14 +351,14 @@ class Gridsearch(object):
         self.verbose = True
         self.savedir = savedir
         self.search_depth = 3
-        self.depth_stepsizes = [10, 4, 1]
+        self.depth_stepsizes = [5, 2.5, 0.5]
         self.grid_shrink = 0.4
         
-        self.l1_range = [0,100]
-        self.l1_granularity = 0.1
+        self.l1_range = range(8,70,1)
+        #self.l1_granularity = 0.1
                     
-        self.l2 = 100.
-        self.l3 = 1000.
+        self.l2_range = [0., 1., 10, 100., 1000., 10000.]
+        self.l3_range = [0., 1., 10, 100., 1000., 10000.]
         
         self.folds = 5
         
@@ -488,159 +488,161 @@ class Gridsearch(object):
         
         self.gnet = gnet
         self.records['title'] = name
-        self.records['l1_start_range'] = self.l1_range
-        self.records['l1_current_range'] = self.l1_range
-        self.records['l2'] = self.l2
-        self.records['l3'] = self.l3
-        self.records['l1_granularity'] = self.l1_granularity
-        self.records['depth_step_sizes'] = self.depth_stepsizes
-        self.records['grid_shrink'] = self.grid_shrink
-        self.records['search_depth'] = self.search_depth
+        #self.records['l1_start_range'] = self.l1_range
+        #self.records['l1_current_range'] = self.l1_range
+        self.records['l1_range'] = self.l1_range
+        self.records['l2_range'] = self.l2_range
+        self.records['l3_range'] = self.l3_range
+        #self.records['depth_step_sizes'] = self.depth_stepsizes
+        #self.records['grid_shrink'] = self.grid_shrink
+        #self.records['search_depth'] = self.search_depth
         self.records['folds'] = self.folds
         self.records['current_iter'] = 0
-        self.records['current_depth'] = 0
+        #self.records['current_depth'] = 0
         self.records['searches'] = self.searches
         
         
         search_count = 0
         l1min = self.l1_range[0]
-        l1max = self.l1_range[1]
+        l1max = self.l1_range[-1]
         best_acc = 0.
-        best_l1 = 0
+        best_l1 = -1
+        best_l2 = -1
+        best_l3 = -1
         cur_distance = l1max-l1min
         
-        for depth, stepsize in zip(range(self.search_depth), self.depth_stepsizes):
-            
-            #cur_l1_range, stepsize = self.generate_l1_values(l1min, l1max, self.l1_granularity)
-            
-            cur_l1_range = self.simple_generate_l1_range(l1min, l1max, stepsize)
-            
-            if reverse_range:
-                cur_l1_range.reverse()
-            
-            self.records['current_depth'] = depth
-            
-            if graphnet_l1_multisearch:
+        for l3 in self.l3_range:
+            for l2 in self.l2_range:
                 
-                cur_params = {'l1':[], 'l2':self.l2, 'l3':self.l3}
+                cur_l1_range = self.l1_range
+                                                  
+                if reverse_range:
+                    cur_l1_range.reverse()
                 
-                csearch = {}
+                #self.records['current_depth'] = depth
+                
+                if graphnet_l1_multisearch:
                     
-                csearch['search_iter'] = search_count
-                self.records['current_iter'] = search_count
-                
-                csearch['parameters'] = cur_params
-                
-                if self.verbose:
-                    print '\nPREFORMING NEXT MULTI-SEARCH GRAPHNET\n'
-                    print 'depth:', depth
-                    print 'l1 range:', cur_l1_range
+                    cur_params = {'l1':[], 'l2':l2, 'l3':l3}
                     
-                csearches = self.run_naive_gnet(csearch, l1_list=cur_l1_range)
-                
-                for cs in csearches:
-                    self.searches.append(cs)
-                    search_count += 1
-                self.records['current_iter'] = search_count
-                self.records['searches'] = self.searches
-                
-                for srec in self.searches:
-                    cacc = srec['average_accuracy']
-                    if cacc > best_acc:
-                        best_acc = cacc
-                        best_l1 = srec['parameters']['l1']
-                
-                self.records['best_acc'] = best_acc
-                self.records['best_l1'] = best_l1
-                
-                
-                self.log_progress()
-                
-            
-            else:
-                
-                for l1 in cur_l1_range:
-                
-                    cur_params = {'l1':l1, 'l2':self.l2, 'l3':self.l3}
+                    csearch = {}
+                        
+                    csearch['search_iter'] = search_count
+                    self.records['current_iter'] = search_count
                     
-                    #check if parameters have already been calculated:
-                    do_search = True
-                    for search in self.searches:
-                        old_params = search['parameters']
-                        if old_params == cur_params:
-                            do_search = False
-                            if self.verbose:
-                                print 'Already completed this search...'
-                                print 'old values:', old_params
-                                print 'new values:', cur_params
-                                
-                    if do_search:
-                        if self.verbose:
-                            print 'Parameters for this search:', cur_params      
+                    csearch['parameters'] = cur_params
                     
-                        csearch = {}
+                    if self.verbose:
+                        print '\nPREFORMING NEXT MULTI-SEARCH GRAPHNET\n'
+                        print 'l1 range:', cur_l1_range
+                        print 'l2', l2
+                        print 'l3', l3
                         
-                        csearch['search_iter'] = search_count
-                        self.records['current_iter'] = search_count
-                        
-                        csearch['parameters'] = cur_params
-                        
-                        if self.verbose:
-                            print '\nPREFORMING NEXT GRAPHNET\n'
-                            print 'search number:', search_count
-                            print 'depth:', depth
-                            print 'l1 range:', cur_l1_range
-                            print 'current l1:', l1
-                            print 'best acccuracy:', best_acc
-                            print 'l1 for best accuracy:', best_l1
-                            
-                        csearch = self.run_naive_gnet(csearch)
-                        
-                        self.searches.append(csearch)
-                        self.records['searches'] = self.searches
-                        
-                        for srec in self.searches:
-                            cacc = srec['average_accuracy']
-                            if cacc > best_acc:
-                                best_acc = cacc
-                                best_l1 = srec['parameters']['l1']
-                        
-                        self.records['best_acc'] = best_acc
-                        self.records['best_l1'] = best_l1
-                        
+                    csearches = self.run_naive_gnet(csearch, l1_list=cur_l1_range)
+                    
+                    for cs in csearches:
+                        self.searches.append(cs)
                         search_count += 1
-                        self.log_progress()
+                    self.records['current_iter'] = search_count
+                    self.records['searches'] = self.searches
                     
+                    for srec in self.searches:
+                        cacc = srec['average_accuracy']
+                        if cacc > best_acc:
+                            best_acc = cacc
+                            best_parameters = srec['parameters']
                     
+                    self.records['best_acc'] = best_acc
+                    self.records['best_parameters'] = best_parameters
                     
-            # find best accuracy, redefine l1max, l1min:
-
-            new_distance = float(cur_distance)*self.grid_shrink
-            l1min = int(round(float(best_l1)-new_distance/2.))
-            l1min = max([0,l1min])
-            l1max = int(round(float(best_l1)+new_distance/2.))
-            
-            cur_distance = new_distance
-            self.records['l1_current_range'] = [l1min, l1max]
+                    self.log_progress()
                     
-            if self.verbose:
-                print 'best acccuracy:', best_acc
-                print 'l1 for best accuracy:', best_l1
-                print 'new l1min:', l1min
-                print 'new l1max:', l1max
                 
-            self.log_progress()
+                else:
+                    
+                    for l1 in cur_l1_range:
+                    
+                        cur_params = {'l1':l1, 'l2':self.l2, 'l3':self.l3}
+                        
+                        #check if parameters have already been calculated:
+                        do_search = True
+                        for search in self.searches:
+                            old_params = search['parameters']
+                            if old_params == cur_params:
+                                do_search = False
+                                if self.verbose:
+                                    print 'Already completed this search...'
+                                    print 'old values:', old_params
+                                    print 'new values:', cur_params
+                                    
+                        if do_search:
+                            if self.verbose:
+                                print 'Parameters for this search:', cur_params      
+                        
+                            csearch = {}
+                            
+                            csearch['search_iter'] = search_count
+                            self.records['current_iter'] = search_count
+                            
+                            csearch['parameters'] = cur_params
+                            
+                            if self.verbose:
+                                print '\nPREFORMING NEXT GRAPHNET\n'
+                                print 'search number:', search_count
+                                print 'depth:', depth
+                                print 'l1 range:', cur_l1_range
+                                print 'current l1:', l1
+                                print 'best acccuracy:', best_acc
+                                print 'l1 for best accuracy:', best_l1
+                                
+                            csearch = self.run_naive_gnet(csearch)
+                            
+                            self.searches.append(csearch)
+                            self.records['searches'] = self.searches
+                            
+                            for srec in self.searches:
+                                cacc = srec['average_accuracy']
+                                if cacc > best_acc:
+                                    best_acc = cacc
+                                    best_l1 = srec['parameters']['l1']
+                            
+                            self.records['best_acc'] = best_acc
+                            self.records['best_l1'] = best_l1
+                            
+                            search_count += 1
+                            self.log_progress()
+                        
+                        
+                        
+                # find best accuracy, redefine l1max, l1min:
+    
+                '''
+                new_distance = float(cur_distance)*self.grid_shrink
+                l1min = int(round(float(best_l1)-new_distance/2.))
+                l1min = max([0,l1min])
+                l1max = int(round(float(best_l1)+new_distance/2.))
+                
+                cur_distance = new_distance
+                self.records['l1_current_range'] = [l1min, l1max]
+                        
+                if self.verbose:
+                    print 'best acccuracy:', best_acc
+                    print 'l1 for best accuracy:', best_l1
+                    print 'new l1min:', l1min
+                    print 'new l1max:', l1max
+                    
+                self.log_progress()
+                '''    
+                
+                
+                
+                
+                
+                
                 
             
             
-            
-            
-            
-            
-            
-        
-        
-            
+                
             
         
             

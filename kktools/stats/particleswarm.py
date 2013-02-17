@@ -4,6 +4,7 @@ import os
 import random
 import itertools
 import time
+import json
 import nibabel as nib
 import scipy.stats as stats
 from pprint import pprint
@@ -28,7 +29,7 @@ class ParticleSwarm(object):
         self.verbose = True
         
         # maximum iterations to run
-        self.max_iterations = 1000
+        self.max_iterations = 10000
         
         
         # particle length; how many dimenstions/coefficients? Should always be
@@ -44,7 +45,7 @@ class ParticleSwarm(object):
         # the particle initialization coefficient is the "size penalty" put on
         # each coefficients initial random coefficient value. The coefficients
         # will start at random [-1,1] * self.particle_initialization_coef
-        self.particle_initialization_coef = 1.0     #1./self.particle_length
+        self.particle_initialization_coef = 1./1000.    #1./self.particle_length
         
         # the number of particles to use, typically in range 10-50, though
         # there is no recommended "range" for brain data (that i know of).
@@ -79,9 +80,11 @@ class ParticleSwarm(object):
         #               'falling' back towards the global best
         self.use_cascade = True
         
-        self.cascade_velocity_threshold = 100000.
+        self.cascade_velocity_threshold = 5000.
         self.cascade_narrowing = True
-        self.cascade_narrowing_coef = 0.95
+        self.cascade_narrowing_coef = 0.98
+        self.cascade_global_arbiter = True
+        
         
         # initial velocity function indicates the function that initializes velocity
         # the default is to start the velocities at zero.
@@ -116,15 +119,18 @@ class ParticleSwarm(object):
         
         # various ways to control the velocity...
         # v_max sets a maximum (absolute) velocity per dimension
-        self.xmax = 100.0
-        self.vmax = self.xmax*0.25
+        self.xmax = 1.0
+        self.vmax = self.xmax*2.
+        
+        # restrict X makes engages boundaries set by xmax
+        self.restrict_x = False
         
         
         # inertia constant: keeps the velocity from going out of control as long
         # as some conditions are met
         # in the future this inertia constant will be able to move as the program
         # progresses
-        self.inertia_constant = 0.7
+        self.inertia_constant = 0.80
         
         
 
@@ -141,7 +147,11 @@ class ParticleSwarm(object):
         
         # subsample size determines how many trials to use if fitness_type is set
         # to subsample. keep in mind that the smaller the size the less fitness info:
-        self.subsample_size = 10
+        self.subsample_size = 300
+        
+        # make all correct guesses simply '1'
+        self.score_allcorrect_one = True
+
         
         # balanced trials ensures that the subsample is comprised equally of
         # positive and negative choices
@@ -207,10 +217,7 @@ class ParticleSwarm(object):
             self.useX = self.X
             self.useY = self.Y
             
-        
-        
-        
-
+    
 
     def create_particle(self, pid, neighbor_ids, particle_type='continuous',
                         prepared_coefs=None):
@@ -253,15 +260,16 @@ class ParticleSwarm(object):
                           particle_type='continuous', prepared_coefs=None):
         
         if neighborhood_type == 'circle':
+            
             for i in range(population_size):
                 if i == 0:
-                    particles[i] = self.create_particle(i, [population_size-1,i+1],
+                    particles[i] = self.create_particle(pi, [population_size-1,i+1],
                                                         particle_type, prepared_coefs=prepared_coefs)
                 elif i == self.population_size-1:
                     particles[i] = self.create_particle(i, [i-1, 0],
                                                         particle_type)
                 else:
-                    particles[i] = self.create_particle(i, [i-1, i+1],
+                    particlesp[i] = self.create_particle(i, [i-1, i+1],
                                                         particle_type)
                     
         elif neighborhood_type == 'wheel':
@@ -295,8 +303,7 @@ class ParticleSwarm(object):
                                                         prepared_coefs=prepared_coefs)
                 else:
                     particles[i] = self.create_particle(i, neighbors, particle_type)
-                    
-                    
+        
                 
         return particles
         
@@ -304,6 +311,7 @@ class ParticleSwarm(object):
     
     def instantiate_particles(self, neighborhood_type, neighborhood_size,
                               prepared_coefs=None, particle_type='continuous'):
+        
         
         self.particles = {}
         self.global_best_coefs = -1. * np.ones(self.particle_length)
@@ -314,20 +322,30 @@ class ParticleSwarm(object):
         self.xmax = np.array([self.xmax for x in range(self.particle_length)])
         
         self.particles = self.fill_neighborhood(self.particles, neighborhood_size,
-                                                neighborhood_type, particle_type=particle_type,
-                                                prepared_coefs=prepared_coefs)
+                                           neighborhood_type, particle_type=particle_type,
+                                           prepared_coefs=prepared_coefs)
 
-            
             
     
     def calculate_log_distance(self, Y, prediction):
         abs_pred = np.absolute(prediction)
-        correct = np.sign(Y) == np.sign(prediction)
+        
+        if np.sign(Y) == np.sign(prediction):
+            correct = 1.
+        else:
+            correct = -1.
         justified_pred = abs_pred * correct
         
         score = 1. / (1. + np.exp(-1. * justified_pred))
+        score = (score - 0.5) * 2.
         
-        return (score - 0.5) * 2.
+        if self.score_allcorrect_one:
+            if score > 0.:
+                score = 1.
+        
+        #print score, correct, abs_pred, justified_pred
+        
+        return score
         
     
     def fitness(self, coefs, testX=None, testY=None, accuracy_bonus=0.0):
@@ -364,66 +382,17 @@ class ParticleSwarm(object):
     
     
     
-    def svm_crossvalidated_fitness(self, X, Y, subject_indices, voxel_p, folds=5):
-        
-        r_vector = np.random.random_sample(size=self.particle_length)
-        inclusion_inds = np.where(voxel_p > r_vector)[0]
-        
-        svm = ScikitsSVM()
-        svm.X = X[:,inclusion_inds]
-        svm.Y = Y
-        svm.subject_indices = subject_indices
-        
-        cv_accuracy = svm.crossvalidate(folds=folds)
-        
-        return cv_accuracy
-    
     
     
     def validate_outofsample(self, testX, testY):
         avg_correct, avg_distance = self.fitness(self.global_best_coefs, testX, testY)
         print '\nTEST SAMPLE AVG CORRECT:', avg_correct
         print 'TEST SAMPLE AVG DISTANCE:', avg_distance
+        print 'global best accuracy (training)', self.global_best_accuracy
+        print 'global best distance (training)', self.global_best_distance
+        return avg_correct, avg_distance
         
         
-        
-    def calculate_variable_momentum(self, particles):
-        
-        self.average_velocity = np.zeros(self.particle_length)
-        self.average_speed = np.zeros(self.particle_length)
-        self.convergence_distance = np.zeros(self.particle_length)
-        
-        for p in particles:
-            self.average_velocity += particles[p]['velocity']
-            self.average_speed += np.absolute(particles[p]['velocity'])
-            
-        self.average_velocity = np.absolute(self.average_velocity) / self.population_size
-        self.average_speed = self.average_speed / self.population_size
-        
-        print 'average velocity sum:', np.sum(self.average_velocity)
-        print 'average speed sum:', np.sum(self.average_speed)
-        
-        self.convergence_distance = np.square(self.average_velocity) + np.square(self.average_speed)
-        self.convergence_distance = np.sqrt(self.convergence_distance)
-        
-        print 'convergence sum:', np.sum(self.convergence_distance)
-        
-        convergence_max = np.max(self.convergence_distance)
-        
-        variable_momentum_weight = convergence_max / (self.convergence_distance + convergence_max)
-        
-        variable_momentum_weight = variable_momentum_weight * self.inertia_constant
-        
-        variable_momentum = self.particle_length * variable_momentum_weight/np.sum(variable_momentum_weight)
-        
-        self.applied_momentum = (1. - self.momentum_lowpass) * variable_momentum + (self.momentum_lowpass*self.last_momentum)
-        
-        self.applied_momentum = np.power(self.applied_momentum, np.array([self.momentum_power for x in range(self.particle_length)]))
-        
-        print 'momentum sum:', np.sum(self.applied_momentum)
-        
-        self.last_momentum = self.applied_momentum
-        return self.applied_momentum
         
         
         
@@ -465,7 +434,8 @@ class ParticleSwarm(object):
         if self.use_constriction_coefficient:
             next_velocity *= self.constriction
                             
-        next_velocity = np.minimum(self.vmax, np.absolute(next_velocity)) * np.sign(next_velocity)
+        next_velocity = np.maximum(-1.*self.vmax, next_velocity)
+        next_velocity = np.minimum(self.vmax, next_velocity)
             
         return next_velocity
     
@@ -484,52 +454,39 @@ class ParticleSwarm(object):
         else:
             return metric_sum
     
-    
-    def svm_update(self, particles, X, Y, subject_indices, folds=5, prior_iters=25):
-        
-        for p in particles:
-            
-            probs = particles[p]['coefs']
-            cv_accuracy = self.svm_crossvalidated_fitness(X, Y, subject_indices, probs, folds=folds)
-            
-            particles[p]['current_accuracy'] = cv_accuracy
-            particles[p]['accuracies'].append(cv_accuracy)
-            
-            acc_iters = self.metric_over_recent(particles[p]['accuracies'], prior_iters,
-                                                average=True)
-            
-            particles[p]['sum_accuracies'].append(acc_iters)
-            
-            if particles[p]['best_coefs'] is None:
-                particles[p]['best_coefs'] = probs.copy()
-            
-            if cv_accuracy > particles[p]['best_accuracy']:
-                particles[p]['best_accuracy'] = cv_accuracy
-                
-            if cv_accuracy > self.global_best_accuracy:
-                self.global_best_accuracy = cv_accuracy
-                self.global_best_coefs = probs.copy()
-            
-            neighborhood_best = p
-            for npr in particles[p]['neighbors']:
-                if particles[npr]['best_accuracy'] > cv_accuracy:
-                    neighborhood_best = npr
-                    
-            particles[p]['velocity'] = self.local_velocity(particles, p, neighborhood_best)
-            particles[p]['coefs'] += particles[p]['velocity']
-            particles[p]['coefs'] = np.maximum(np.zeros(self.particle_length),particles[p]['coefs'])
-            particles[p]['coefs'] = np.minimum(np.ones(self.particle_length),particles[p]['coefs'])
             
             
-    def save_best(self, output_dir=os.path.join(os.getcwd(), 'coefsave'),
-                  ):
+            
+    def save_best(self, prefix='pop8', output_dir=os.path.join(os.getcwd(), 'save')):
         
         try:
             os.makedirs(output_dir)
         except:
             pass
         
-        name = '_'.join(['I'+str(self.current_iteration), '.npy'])
+        infoname = '_'.join([prefix, 'I'+str(self.current_iteration), 'info.json'])
+        coefname = '_'.join([prefix, 'I'+str(self.current_iteration), 'coef'])
+        
+        infopath = os.path.join(output_dir, infoname)
+        coefpath = os.path.join(output_dir, coefname)
+        
+        np.save(coefpath, self.global_best_coefs)
+        
+        infodict = {}
+        infodict['best_accuracy'] = self.global_best_accuracy
+        infodict['iteration'] = self.current_iteration
+        infodict['neighborhood_type'] = self.neighborhood_type
+        infodict['cascade'] = self.use_cascade
+        infodict['population_size'] = self.population_size
+        
+        test_acc, test_dist = self.validate_outofsample(self.testX, self.testY)
+        
+        infodict['testing_accuracy'] = test_acc
+        
+        infofid = open(infopath, 'w')
+        json.dump(infodict, infofid)
+        infofid.close()
+        
         
         
         
@@ -562,12 +519,13 @@ class ParticleSwarm(object):
                 
             if pacc > particles[p]['best_accuracy']:
                 particles[p]['best_accuracy'] = pacc
-                
-            if pdist > self.global_best_distance:
-                self.global_best_distance = pdist
-                self.global_best_accuracy = pacc
-                self.global_best_coefs = pcoefs.copy()
-                self.save_best()
+            
+            if self.current_iteration > 4:
+                if pdist > self.global_best_distance:
+                    self.global_best_distance = pdist
+                    self.global_best_accuracy = pacc
+                    self.global_best_coefs = pcoefs.copy()
+                    self.save_best()
                     
             neighborhood_best = p
             for npr in particles[p]['neighbors']:
@@ -576,16 +534,29 @@ class ParticleSwarm(object):
                     
             particles[p]['velocity'] = self.local_velocity(particles, p, neighborhood_best)
             particles[p]['coefs'] += particles[p]['velocity']
-            particles[p]['coefs'] = np.maximum(-1.*self.xmax*np.ones(self.particle_length),particles[p]['coefs'])
-            particles[p]['coefs'] = np.minimum(self.xmax*np.ones(self.particle_length),particles[p]['coefs'])
+            
+            if self.restrict_x:
+                particles[p]['coefs'] = np.maximum(-1.*self.xmax*np.ones(self.particle_length),particles[p]['coefs'])
+                particles[p]['coefs'] = np.minimum(self.xmax*np.ones(self.particle_length),particles[p]['coefs'])
             
             if self.current_iteration > 1:
                 if self.use_cascade:
                     if np.sum(np.absolute(particles[p]['velocity'])) < self.cascade_velocity_threshold:
                         print 'CASCADE RESET OF PARTICLE: ', p
-                        particles[p]['coefs'] = (2.*self.xmax*np.random.random_sample(size=self.particle_length))-self.xmax
-                        particles[p]['best_distance'] = 0.0
-                        particles[p]['best_accuracy'] = 0.5
+                        
+                        if self.cascade_global_arbiter and p == 0:
+                            print 'SETTING GLOBAL ARBITER p=0'
+                            particles[p]['coefs'] = (2.*self.xmax*np.random.random_sample(size=self.particle_length))-self.xmax
+                            particles[p]['best_distance'] = self.global_best_distance
+                            particles[p]['best_accuracy'] = self.global_best_accuracy
+                            particles[p]['best_coefs'] = self.global_best_coefs
+                            
+                        else:
+                            particles[p]['coefs'] = (2.*self.xmax*np.random.random_sample(size=self.particle_length))-self.xmax
+                            particles[p]['best_distance'] = 0.0
+                            particles[p]['best_accuracy'] = 0.5
+                            particles[p]['best_coefs'] = np.zeros(self.particle_length)
+                        
                         particles[p]['distances'] = []
                         particles[p]['accuracies'] = []
 
@@ -599,19 +570,11 @@ class ParticleSwarm(object):
     def print_rank(self, particles, lookback=100):
         self.fitness_ranking = [[p['id'], p['sum_distances'][-1], p['current_distance'], p['current_accuracy'],
                                 p['sum_accuracies'][-1], np.sum(np.absolute(p['velocity']))] for p in particles.values()]
-        self.fitness_ranking = sorted(self.fitness_ranking, key=lambda k: k[1])
+        self.fitness_ranking = sorted(self.fitness_ranking, key=lambda k: k[2])
         self.fitness_ranking.reverse()
         for id, adist, dist, acc, accs, vel in self.fitness_ranking:
             print 'ID:', id, '\tAVG FIT:', adist, '\tCUR FIT:', dist, '\tCUR ACC:', acc, '\tAVG ACC :', accs, '\tVEL:', vel
                 
-                
-    def print_svm_rank(self, particles, lookback=25):
-        self.fitness_ranking = [[p['id'], p['current_accuracy'], p['sum_accuracies'][-1],
-                                 np.sum(np.absolute(p['velocity']))] for p in particles.values()]
-        self.fitness_ranking = sorted(self.fitness_ranking, key=lambda k: k[1])
-        self.fitness_ranking.reverse()
-        for id, acc, accs, vel in self.fitness_ranking:
-            print 'ID:', id, '\tCUR ACC:', acc, '\tAVG ACC :', accs, '\tVEL:', vel
               
                 
                 
@@ -619,6 +582,8 @@ class ParticleSwarm(object):
         self.testX = X
         self.testY = Y
         self.testX = self.normalize_xset(self.testX)
+                
+                
                 
     
     def run(self, test=True, prepared_coefs=None):
@@ -645,13 +610,24 @@ class ParticleSwarm(object):
                 if self.current_iteration > 1:
                     accs = []
                     for p in self.particles:
-                        accs.append(self.particles[p]['current_distance'])
+                        accs.append(self.particles[p]['current_accuracy'])
                     if len(np.unique(accs)) == 1:
                         print 'RESETTING ALL PARTICLES, SAME ACCURACY...'
                         for p in self.particles.values():
-                            p['coefs'] = (2.*self.xmax*np.random.random_sample(size=self.particle_length))-self.xmax
-                            p['best_distance'] = 0.0
-                            p['best_accuracy'] = 0.5
+                            
+                            if self.cascade_global_arbiter and p == 0:
+                                print 'SETTING GLOBAL ARBITER p=0'
+                                particles[p]['coefs'] = (2.*self.xmax*np.random.random_sample(size=self.particle_length))-self.xmax
+                                particles[p]['best_distance'] = self.global_best_distance
+                                particles[p]['best_accuracy'] = self.global_best_accuracy
+                                particles[p]['best_coefs'] = self.global_best_coefs
+                            
+                            else:
+                                p['coefs'] = (2.*self.xmax*np.random.random_sample(size=self.particle_length))-self.xmax
+                                p['best_distance'] = 0.0
+                                p['best_accuracy'] = 0.5
+                                particles[p]['best_coefs'] = np.zeros(self.particle_length)
+                                
                             p['distances'] = []
                             p['accuracies'] = []
                             
@@ -675,7 +651,7 @@ class ParticleSwarm(object):
             
             self.print_svm_rank(self.particles)
     
-    
+            stop
     
     
         
