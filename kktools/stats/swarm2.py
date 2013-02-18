@@ -16,6 +16,72 @@ from threshold import threshold_by_pvalue
 
 
 
+class SwarmData(object):
+    
+    def __init__(self):
+        super(SwarmData, self).__init__()
+        self.trainX = None
+        self.trainY = None
+        self.testX = None
+        self.testY = None
+        self.coefs = None
+
+
+
+class SwarmDataManager(object):
+    
+    def __init__(self, data_obj):
+        super(SwarmData, self).__init__()
+        self.data = data_obj
+        self.X = self.data.X
+        self.Y = self.data.Y
+        
+        
+    def normalize_x(self, Xset):
+        Xnorm = simple_normalize(Xset)
+        return Xnorm
+    
+    
+    def subselect_x(self, Xset, inds):
+        inds = [int(x) for x in inds]
+        return Xset[:,inds]
+        
+        
+    def subselect_y(self, Yset, inds):
+        inds = [int(x) for x in inds]
+        return Yset[inds]
+        
+        
+    def prepare_data_folds(self, folds=4, do_svm=True, save_trainXY=False):
+        self.data_folds = {}
+        
+        cvo = CVObject(data_obj=self.data)
+        cvo.prepare_folds(folds=folds)
+        
+        for i in range(folds):
+            sd = SwarmData()
+            
+            sd.trainX = self.normalize_x(self.subselect_x(self.X, cvo.trainX[i]))
+            sd.trainY = self.subselect_y(self.Y, cvo.trainY[i])
+            
+            sd.testX = self.normalize_x(self.subselect_x(self.X, cvo.testX[i]))
+            sd.testY = self.subselect_y(self.Y, cvo.testY[i])
+            
+            if do_svm:
+                svm = LinearSVM()
+                sd.coefs = svm.fit_linearsvc(sd.X, sd.Y).coef_[0]
+                
+            if not save_trainXY:
+                sd.trainX = []
+                sd.trainY = []
+            
+            self.data_folds[i] = sd
+                
+                
+        
+
+
+
 class Particle(object):
     
     def __init__(self):
@@ -51,7 +117,7 @@ class Particle(object):
             self.coefs = multiplier*random_range
             
         elif particle_type == 'binary':
-            self.coefs = 1.*np.random.randint(2, size=dimensions)
+            self.coefs = np.random.randint(2, size=dimensions)
             
         elif particle_type == 'probability':
             self.coefs = np.random.random_sample(size=dimensions)
@@ -63,6 +129,9 @@ class Particle(object):
     
         if velocity_start == 'zeros':
             self.velocity = np.zeros(dimensions)
+            
+        elif velocity_start == 'probability':
+            self.velocity = np.random.random_sample(size=dimensions)
             
             
             
@@ -125,7 +194,7 @@ class VelocityFunction(object):
         
         
     def __call__(self, particles, particle, neighborhood_best):
-        return self.velocity(particles, particle, neighborhood_best)
+        return self.local_velocity(particles, particle, neighborhood_best)
         
         
     def calculate_constriction(self):
@@ -138,28 +207,21 @@ class VelocityFunction(object):
         if self.verbose:
             print 'constriction coefficient = ', self.constriction
         
+    
+    def stochastic_acceleration_update(self):
+        self.acceleration_a = self.acceleration_sum * np.random.random()
+        self.acceleration_b = self.acceleration_sum - self.acceleration_a
+    
+    def inertia_update(self, particle):
+        past_v = particle.velocity.copy()
+        past_v *= self.inertia_constant
+        return past_v
         
-    def velocity(self, particles, p, nb):
         
-        acceleration_a = self.acceleration_sum * np.random.random()
-        acceleration_b = self.acceleration_sum - acceleration_a
-        
-        if p == nb:
-            nb_d = np.zeros(particles[p].dimensions)
-        else:
-            nb_d = particles[nb].best_coefs - particles[p].coefs
-            
-        ind_d = particles[p].best_coefs - particles[p].coefs
-        
-        nb_d *= acceleration_a
-        ind_d *= acceleration_b
-        
-        next_v = nb_d + ind_d
+    def apply_restrictions(self, particle, next_v):
         
         if self.use_inertia:
-            past_v = particles[p].velocity.copy()
-            past_v *= self.inertia_constant
-            next_v += past_v
+            next_v += self.inertia_update(particle)
             
         if self.use_constriction:
             next_v *= self.constriction
@@ -169,15 +231,55 @@ class VelocityFunction(object):
             next_v = np.minimum(self.vmax_range, next_v)
             
         return next_v
+            
+        
+    def local_velocity(self, particles, p, nb):
+        
+        self.stochastic_acceleration_update()
+        
+        if p == nb:
+            nb_d = np.zeros(particles[p].dimensions)
+        else:
+            nb_d = particles[nb].best_coefs - particles[p].coefs
+            
+        ind_d = particles[p].best_coefs - particles[p].coefs
+        
+        nb_d *= self.acceleration_a
+        ind_d *= self.acceleration_b
+        
+        next_v = nb_d + ind_d
+        
+        next_v = self.apply_restrictions(particles[p], next_v)
+        
+        return next_v
+
+    
+    def global_velocity(self, particle, global_best_coefs):
+        
+        self.stochastic_acceleration_update()
+        
+        gb_d = global_best_coefs - particle.coefs
+        ind_d = particle.best_coefs - particle.coefs
+        
+        gb_d *= self.acceleration_a
+        ind_d *= self.acceleration_b
+        
+        next_v = gb_d + ind_d
+        
+        next_v = self.apply_restrictions(particle, next_v)
+        
+        
+        
+        
 
 
 
 class Swarm(object):
     
-    def __init__(self, id=0, vmax=None, xmax=None, particle_type='weight',
+    def __init__(self, data_folds, id=0, vmax=None, xmax=None, particle_type='weight',
                  particle_multiplier=1., neighborhood_type='circle',
                  population_size=5, fitness_function=FitnessFunction(),
-                 velocity_function=VelocityFunction()):
+                 velocity_function=VelocityFunction(), max_iters=1000):
         
         super(Swarm, self).__init__()
         
@@ -193,19 +295,32 @@ class Swarm(object):
         self.fitness_function = fitness_function
         self.velocity_function = velocity_function
         
+        self.data_folds = data_folds
+        self.max_iters = max_iters
+        
+        self.verbose = True
+        
+        
+        
         
     def initialize_particle_limits(self, particle_dimensions):
         
         if not self.vmax is None:
+            if self.verbose:
+                print 'setting vmax'
             self.vmax_range = np.array([self.vmax for x in range(particle_dimensions)])
             self.velocity_function.vmax_range = self.vmax_range
         
         if not self.xmax is None:
+            if self.verbose:
+                print 'setting xmax'
             self.xmax_range = np.array([self.xmax for x in range(particle_dimensions)])
             self.use_xmax = True
     
         
     def initialize_global_records(self, particle_dimensions):
+        
+        if self.verbose: print 'initializing global records'
         
         self.global_best_coefs = np.zeros(particle_dimensions)
         self.global_best_accuracy = None
@@ -214,6 +329,10 @@ class Swarm(object):
         
     def initialize_particles(self, particle_dimensions):
         
+        if self.verbose:
+            print 'initializing particles, dimensions:', particle_dimensions
+            print 'population type:', self.neighborhood_type
+            
         self.initialize_particle_limits(particle_dimensions)
         self.initialize_global_records(particle_dimensions)
         
@@ -254,14 +373,14 @@ class Swarm(object):
                 
 
                 
-    def beta_fitness(self, particle, testX, testY):
+    def beta_fitness(self, particle, X, Y):
         
         coefs = particle.coefs
         
         correct = []
         fitnesses = []
         
-        for iter, (tX, tY) in enumerate(zip(testX, testY)):
+        for iter, (tX, tY) in enumerate(zip(X, Y)):
             predictors = coefs*tX
             prediction = np.sum(predictors)
             
@@ -279,15 +398,50 @@ class Swarm(object):
     
     
     
-    def asynchronous_update(self, X, Y):
+    def binary_fitness(self, particle, X, Y, test_coefs):
         
-        assess_particle_fitness = self.beta_fitness
+        correct = []
+        fitnesses = []
         
+        coefs = test_coefs.copy() * particle.coefs
+        
+        for tX, tY in zip(X, Y):
+            predictors = coefs*tX
+            prediction = np.sum(predictors)
+            
+            if np.sign(prediction) == np.sign(tY):
+                correct.append(1.)
+            else:
+                correct.append(-1.)
+                
+            fitnesses.append(self.fitness_function(float(tY), prediction))
+            
+        avg_correct = sum(correct)/len(correct)
+        avg_fitness = sum(fitnesses)/len(fitnesses)
+        
+        return avg_correct, avg_fitness
+        
+    
+    
+    
+    def multi_asynchronous_update(self, Xs, Ys, test_coefs):
+            
+        if self.verbose:
+            print 'updating particle swarm...'
         
         for p in self.particles:
             particle = self.particles[p]
             
-            p_accuracy, p_fitness = assess_particle_fitness(particle, X, Y)
+            # Currently this section only works for binary/probability swarms
+            p_accuracy, p_fitness = []
+            for c_X, c_Y, c_coefs in zip(Xs, Ys, test_coefs):
+                c_accuracy, c_fitness = self.binary_fitness(particle, c_X, c_Y, c_coefs)
+                p_accuracy.append(c_accuracy)
+                p_fitness.append(c_fitness)
+                
+            p_accuracy = sum(p_accuracy)/len(p_accuracy)
+            p_fitness = sum(p_fitness)/len(p_fitness)
+            
             
             if self.global_best_fitness is None:
                 self.global_best_fitness = p_fitness
@@ -327,19 +481,56 @@ class Swarm(object):
             particle.abs_velocities.append(np.sum(np.absolute(particle.velocity)))
             particle.velocity = self.velocity_function(self.particles, p, neighborhood_best)
             
-            
-            particle.coefs += particle.velocity
+        
+            if self.particle_type == 'weight': 
+                particle.coefs += particle.velocity
 
-            if self.use_xmax:
-                particle.coefs = np.maximum(-1.*self.xmax_range, particle.coefs)
-                particle.coefs = np.minimum(self.xmax_range, particle.coefs)
+                if self.use_xmax:
+                    particle.coefs = np.maximum(-1.*self.xmax_range, particle.coefs)
+                    particle.coefs = np.minimum(self.xmax_range, particle.coefs)
+            
+            elif self.particle_type == 'binary':
+                chance_vector = np.random.random_sample(size=particle.dimensions)
+                particle.coefs = np.array((particle.velocity > chance_vector), dtype=np.int)
                 
             # re-assign just in case:
             self.particles[p] = particle
 
 
+    def reporter(self, iter):
+        items = [[p.id, p.current_fitness, p.current_accuracy] for p in self.particles]
+        items = sorted(items, key=lambda k: k[1])
+        print '\nITERATION:', iter
+        print '\n\tPID:\t\tCUR FIT:\t\tCUR ACC:\t\t'
+        for id, fit, acc in items:
+            print id, '\t\t', fit, '\t\t', acc
+        
 
 
+    def data_fold_updater(self):
+        
+        testXs = []
+        testYs = []
+        test_coefs = []
+        
+        if self.verbose:
+            print 'sorting X, Y, coef from data folds...'
+            
+        for fold in sorted(self.data_folds.keys()):
+            fobj = self.data_folds[fold]
+            testXs.append(fobj.testX)
+            testYs.append(fobj.testY)
+            test_coefs.append(fobj.coefs)
+            
+        if self.verbose:
+            print 'beginning update cycle. iterations:', self.max_iters
+           
+        for iter in range(self.max_iters):
+                
+            self.multi_asynchronous_update(testXs, testYs, test_coefs)
+            self.reporter(iter)
+            
+        
 
 
 
