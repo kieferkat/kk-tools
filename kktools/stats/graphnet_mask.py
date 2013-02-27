@@ -24,6 +24,7 @@ def adj_from_nii(maskfile,num_time_points,numt=0,numx=1,numy=1,numz=1,regions=No
     adj = convert_to_array(adj)
     return adj
 
+
 def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None):
     """
     Return adjacency list, where the voxels are considered
@@ -96,6 +97,7 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None):
                         ind = np.bool_(ind)
                         adj.append(np.array(local_map[ind],dtype=int))
                         #adj.append(local_map[ind])
+                        
     for i, a in enumerate(adj):
         a[np.equal(a,i)] = -1
         adj[i] = a.tolist()
@@ -124,5 +126,5 @@ def test_prep(nt=0,nx=1,ny=1,nz=1):
     mask[:,1,1,:] = 1
 #    print mask[0]
 #    print a[0,0]
-    newa, adj = prepare_adj(a,mask,nt,nx,ny,nz)
+    adj = prepare_adj(mask,nt,nx,ny,nz)
 #    print newa[0,0], adj[0], newa[0,adj[0]]

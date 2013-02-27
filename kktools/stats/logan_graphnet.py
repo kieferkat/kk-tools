@@ -357,8 +357,8 @@ class Gridsearch(object):
         self.l1_range = range(8,70,1)
         #self.l1_granularity = 0.1
                     
-        self.l2_range = [0., 1., 10, 100., 1000., 10000.]
-        self.l3_range = [0., 1., 10, 100., 1000., 10000.]
+        self.l2_range = [100000.]
+        self.l3_range = [0.]
         
         self.folds = 5
         
@@ -514,7 +514,7 @@ class Gridsearch(object):
         for l3 in self.l3_range:
             for l2 in self.l2_range:
                 
-                cur_l1_range = self.l1_range
+                cur_l1_range = self.l1_range[:]
                                                   
                 if reverse_range:
                     cur_l1_range.reverse()

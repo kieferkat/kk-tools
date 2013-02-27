@@ -12,7 +12,7 @@ from stats.linearsvm import ScikitsSVM, SVMRFE
 from stats.pls import PLS
 from stats.regression import LogisticRegression
 from stats.genetic import GeneticAlgorithm
-from stats.particleswarm import ParticleSwarm
+#from stats.particleswarm import ParticleSwarm
 #from stats.logan_graphnet import GraphnetInterface
 
 from utilities.cleaners import glob_remove
