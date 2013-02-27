@@ -53,7 +53,7 @@ class SwarmDataManager(object):
         return Yset[inds]
         
         
-    def prepare_data_folds(self, folds=4, do_svm=False, save_trainXY=True):
+    def prepare_data_folds(self, folds=4, do_svm=False, save_trainXY=False):
         self.data_folds = {}
         
         cvo = CVObject(data_obj=self.data)
@@ -118,11 +118,11 @@ class Particle(object):
         
 
     
-    def initialize_coefs(self, dimensions, particle_type='weight', multiplier=1.):
+    def initialize_coefs(self, dimensions, particle_type='beta', multiplier=1.):
         
         self.dimensions = dimensions
         
-        if particle_type == 'weight':
+        if particle_type == 'beta':
             random_range = 2.*np.random.random_sample(size=dimensions)-1.
             self.coefs = multiplier*random_range
             
@@ -282,6 +282,8 @@ class VelocityFunction(object):
         
         next_v = self.apply_restrictions(particle, next_v)
         
+        return next_v
+        
         
         
         
@@ -311,6 +313,8 @@ class Swarm(object):
         
         self.swarmdata = swarmdata
         self.max_iters = max_iters
+        
+        self.jitter_length = 10
         
         self.verbose = True
         
@@ -385,6 +389,9 @@ class Swarm(object):
                 else:
                     particle.neighbors = [self.population_size-1]
                     
+            elif self.neighborhood_type == 'global':
+                particle.neighbors = []
+                    
             particle.initialize_coefs(particle_dimensions, particle_type=self.particle_type,
                                       multiplier=self.particle_multiplier)
             
@@ -442,10 +449,21 @@ class Swarm(object):
         
         return avg_correct, avg_fitness
         
+        
+    def penalize_fitness(self, fitnesses, penalty, verbose=False):
+        
+        if not penalty:
+            return sum(fitnesses)/len(fitnesses)
+        
+        elif penalty == 'difference':
+            if verbose:
+                print 'fits:', fitnesses, 'difference:', (max(fitnesses) - min(fitnesses))
+            return sum(fitnesses)/len(fitnesses) - (max(fitnesses) - min(fitnesses))
+        
     
     
-    
-    def multi_asynchronous_update(self, Xs, Ys, test_coefs):
+    def multi_asynchronous_update(self, Xs, Ys, test_coefs=None, particle_type='beta',
+                                  fitness_penalty='difference', jitter=False):
             
         if self.verbose:
             print 'updating particle swarm...'
@@ -455,13 +473,26 @@ class Swarm(object):
             
             # Currently this section only works for binary/probability swarms
             p_accuracy, p_fitness = [], []
-            for c_X, c_Y, c_coefs in zip(Xs, Ys, test_coefs):
-                c_accuracy, c_fitness = self.binary_fitness(particle, c_X, c_Y, c_coefs)
-                p_accuracy.append(c_accuracy)
-                p_fitness.append(c_fitness)
+            
+            if particle_type == 'probability':
+                if not test_coefs:
+                    print 'probability currently requires test coefs, breaking...'
+                    break
+                for c_X, c_Y, c_coefs in zip(Xs, Ys, test_coefs):
+                    c_accuracy, c_fitness = self.binary_fitness(particle, c_X, c_Y, c_coefs)
+                    p_accuracy.append(c_accuracy)
+                    p_fitness.append(c_fitness)
+                    
+            elif particle_type == 'beta':
                 
+                for c_X, c_Y in zip(Xs, Ys):
+                    c_accuracy, c_fitness = self.beta_fitness(particle, c_X, c_Y)
+                    p_accuracy.append(c_accuracy)
+                    p_fitness.append(c_fitness)
+                
+            
             p_accuracy = sum(p_accuracy)/len(p_accuracy)
-            p_fitness = sum(p_fitness)/len(p_fitness)
+            p_fitness = self.penalize_fitness(p_fitness, fitness_penalty)
             
             
             if self.global_best_fitness is None:
@@ -500,13 +531,17 @@ class Swarm(object):
                     neighborhood_best = nbr
             
             particle.abs_velocities.append(np.sum(np.absolute(particle.velocity)))
-            particle.velocity = self.velocity_function(self.particles, p, neighborhood_best)
+            
+            if self.neighborhood_type == 'global':
+                particle.velocity = self.velocity_function.global_velocity(particle, self.global_best_coefs)
+            else:
+                particle.velocity = self.velocity_function(self.particles, p, neighborhood_best)
             
         
-            if self.particle_type == 'weight': 
+            if self.particle_type == 'beta': 
                 particle.coefs += particle.velocity
 
-                if self.use_xmax:
+                if self.xrange:
                     particle.coefs = np.maximum(self.xmax_range, particle.coefs)
                     particle.coefs = np.minimum(self.xmin_range, particle.coefs)
             
@@ -515,6 +550,16 @@ class Swarm(object):
                 chance_vector = np.random.random_sample(size=particle.dimensions)
                 sigmoid_velocity = self._sigmoid(particle.velocity)
                 particle.coefs = np.array((sigmoid_velocity > chance_vector), dtype=np.int)
+                
+            if jitter:
+                if len(particle.accuracies) > self.jitter_length:
+                    if len(np.unique(particle.accuracies[-self.jitter_length:])) == 1:
+                        if self.verbose:
+                            print 'jittering particle:', particle.id
+                        cmax = np.maximum(particle.coefs)
+                        cmin = np.minimum(particle.coefs)
+                        randcoefs = 2.*(np.random.random_sample(self.swarmdata.dimensions)-1.)
+                        particle.coefs = randcoefs*(cmax-cmin)
                 
             # re-assign just in case:
             self.particles[p] = particle
@@ -529,16 +574,16 @@ class Swarm(object):
         items = sorted(items, key=lambda k: k[1])
         items.reverse()
         print '\nITERATION:', iter
-        print 'PID:\t\t\tCUR FIT:\t\t\tCUR ACC:\t\t\tCOEF SUM:'
+        print 'PID:\t\tCUR FIT:   \t\tCUR ACC:   \t\tCOEF SUM:'
         for id, fit, acc, coef in items:
-            print id, '\t\t\t', fit, '\t\t\t', acc, '\t\t\t', np.sum(coef)
+            print id, '\t\t', fit, '   \t\t', acc, '   \t\t', np.sum(coef)
             
         print 'GLOBAL BEST FIT:\t\t\tGLOBAL BEST ACC:'
         print self.global_best_fitness, '\t\t\t', self.global_best_accuracy
         
 
 
-    def run(self):
+    def run(self, particle_type='beta', fitness_penalty='difference', jitter=True):
         
         self.initialize_particles(self.swarmdata.dimensions)
         
@@ -550,12 +595,13 @@ class Swarm(object):
         if self.verbose:
             print 'sorting X, Y, coef from data folds...'
             
-            
+        
         for fold in sorted(self.swarmdata.data_folds.keys()):
             fobj = self.swarmdata.data_folds[fold]
             testXs.append(fobj.testX)
             testYs.append(fobj.testY)
-            test_coefs.append(fobj.coefs)
+            if particle_type == 'probability':
+                test_coefs.append(fobj.coefs)
             
             
         if self.verbose:
@@ -564,7 +610,9 @@ class Swarm(object):
            
         for iter in range(self.max_iters):
                 
-            self.multi_asynchronous_update(testXs, testYs, test_coefs)
+            self.multi_asynchronous_update(testXs, testYs, test_coefs=test_coefs,
+                                           particle_type=particle_type,
+                                           fitness_penalty=fitness_penalty, jitter=jitter)
             self.reporter(iter)
             
         
