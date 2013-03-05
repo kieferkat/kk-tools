@@ -117,6 +117,7 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
                         
                         if gm:
                             gmrow = np.array(local_gm[ind], dtype=float)
+                            print gmrow
                         else:
                             gmrow = np.ones(len(adjrow), dtype=float)
                             
