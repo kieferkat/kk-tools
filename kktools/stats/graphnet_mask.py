@@ -94,10 +94,16 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
             for j in range(ny):
                 for k in range(nz):
                     if mask[t,i,j,k]:
+                        
                         local_map = vmap[max((t-numt),0):(t+numt+1),
                                          max((i-numx),0):(i+numx+1),
                                          max((j-numy),0):(j+numy+1),
                                          max((k-numz),0):(k+numz+1)]
+                        
+                        local_gm = vgm_mask[max((t-numt),0):(t+numt+1),
+                                            max((i-numx),0):(i+numx+1),
+                                            max((j-numy),0):(j+numy+1),
+                                            max((k-numz),0):(k+numz+1)]
                         
                         local_reg = regions[max((t-numt),0):(t+numt+1),
                                             max((i-numx),0):(i+numx+1),
@@ -110,7 +116,7 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
                         adjrow = np.array(local_map[ind], dtype=int)
                         
                         if gm:
-                            gmrow = np.array(vgm_mask[adjrow], dtype=float)
+                            gmrow = np.array(local_gm[ind], dtype=float)
                         else:
                             gmrow = np.ones(len(adjrow), dtype=float)
                             
