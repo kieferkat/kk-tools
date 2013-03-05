@@ -25,7 +25,7 @@ def adj_from_nii(maskfile,num_time_points,numt=0,numx=1,numy=1,numz=1,regions=No
     return adj
 
 
-def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None):
+def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
     """
     Return adjacency list, where the voxels are considered
     neighbors if they fall in a ball of radius numt, numx, numy, and numz
@@ -72,10 +72,20 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None):
     mask = np.bool_(mask.copy())
     vmap[~mask] = -1
     vmap -= 1 # now vmap's values run from 0 to mask.sum()-1
+    
+    
+    if gm_mask is not None:
+        gm = True
+        vgm_mask = gm_mask.copy()
+        #vgm_mask[~mask] = -1
+
+    else:
+        gm = False
 
     # Create adjacency list
     
     adj = []
+    #gm_adj = []
 
     nt,nx,ny,nz = mask.shape
 
@@ -88,23 +98,62 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None):
                                          max((i-numx),0):(i+numx+1),
                                          max((j-numy),0):(j+numy+1),
                                          max((k-numz),0):(k+numz+1)]
+                        
                         local_reg = regions[max((t-numt),0):(t+numt+1),
                                             max((i-numx),0):(i+numx+1),
                                             max((j-numy),0):(j+numy+1),
                                             max((k-numz),0):(k+numz+1)]
+                        
                         region = regions[t,i,j,k]
                         ind = (local_map>-1)*(local_reg == region)
                         ind = np.bool_(ind)
-                        adj.append(np.array(local_map[ind],dtype=int))
+                        adjrow = np.array(local_map[ind], dtype=int)
+                        
+                        if gm:
+                            gmrow = np.array(vgm_mask[adjrow], dtype=float)
+                        else:
+                            gmrow = np.ones(len(adjrow), dtype=float)
+                            
+                        adj.append([[a,g] for a,g in zip(adjrow, gmrow)])
+
+                        #adj.append(np.array(local_map[ind],dtype=int))
+                        #if gm:
+                        #    gm_adj.append(np.array(vgm_mask[ind], dtype=float))
                         #adj.append(local_map[ind])
                         
+    
+    accum = []
     for i, a in enumerate(adj):
-        a[np.equal(a,i)] = -1
-        adj[i] = a.tolist()
+        for [ax, g] in a:
+            accum.append(g)
+            
+    print np.unique(g), np.unique(vgm_mask)
+    print np.sum(g), np.sum(vgm_mask)
+    stop
+                        
+    for i, a in enumerate(adj):
+        for j, [ax, g] in enumerate(a):
+            if ax == i:
+                a[j] = [-1, g]
+        adj[i] = a
+        
+        #a[np.equal(a,i)] = -1
+        #adj[i] = a.tolist()
+        
+    #if gm:
+    #    for i, g in enumerate(gm_adj):
+    #        gm_adj[i] = g.tolist()
     #return convert_to_array(adj)
     
-    
+    #if gm:
+    #    return adj, gm_adj
+    #else:
+    #    return adj
+
+
     return adj
+
+
 
 
 def convert_to_array(adj):

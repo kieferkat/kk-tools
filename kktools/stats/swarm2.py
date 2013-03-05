@@ -554,12 +554,15 @@ class Swarm(object):
             if jitter:
                 if len(particle.accuracies) > self.jitter_length:
                     if len(np.unique(particle.accuracies[-self.jitter_length:])) == 1:
-                        if self.verbose:
-                            print 'jittering particle:', particle.id
-                        cmax = np.maximum(particle.coefs)
-                        cmin = np.minimum(particle.coefs)
-                        randcoefs = 2.*(np.random.random_sample(self.swarmdata.dimensions)-1.)
-                        particle.coefs = randcoefs*(cmax-cmin)
+                        print 'resetting particle coefs:', particle.id
+                        #cmax = np.max(particle.coefs)
+                        #cmin = np.min(particle.coefs)
+                        randcoefs = 2.*(np.random.random_sample(size=self.swarmdata.dimensions)-1.)
+                        #particle.coefs = randcoefs*(cmax-cmin)
+                        particle.coefs = randcoefs*self.particle_multiplier
+                        particle.best_coefs = particle.coefs.copy()
+                        particle.best_fitness = 0.0
+                        particle.best_accuracy = 0.0
                 
             # re-assign just in case:
             self.particles[p] = particle
@@ -574,7 +577,7 @@ class Swarm(object):
         items = sorted(items, key=lambda k: k[1])
         items.reverse()
         print '\nITERATION:', iter
-        print 'PID:\t\tCUR FIT:   \t\tCUR ACC:   \t\tCOEF SUM:'
+        print 'PID:\t\tCUR FIT:   \t\t\tCUR ACC:   \t\t\tCOEF SUM:   \t\t\t'
         for id, fit, acc, coef in items:
             print id, '\t\t', fit, '   \t\t', acc, '   \t\t', np.sum(coef)
             
@@ -583,7 +586,7 @@ class Swarm(object):
         
 
 
-    def run(self, particle_type='beta', fitness_penalty='difference', jitter=True):
+    def run(self, particle_type='beta', fitness_penalty='difference', particle_reset=True):
         
         self.initialize_particles(self.swarmdata.dimensions)
         
@@ -612,7 +615,7 @@ class Swarm(object):
                 
             self.multi_asynchronous_update(testXs, testYs, test_coefs=test_coefs,
                                            particle_type=particle_type,
-                                           fitness_penalty=fitness_penalty, jitter=jitter)
+                                           fitness_penalty=fitness_penalty, jitter=particle_reset)
             self.reporter(iter)
             
         

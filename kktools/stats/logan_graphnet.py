@@ -197,7 +197,7 @@ class GraphnetInterface(CVObject):
     
     def train_graphnet(self, X, Y, trial_mask=None, G=None, l1=None, l2=None, l3=None, delta=None,
                       svmdelta=None, initial=None, adaptive=False, svm=False,
-                      scipy_compare=False, tol=1e-5):
+                      scipy_compare=False, tol=1e-5, greymatter_mask=None):
                 
         if not type(l1) in [list, tuple]:
             l1 = [l1]
@@ -219,27 +219,34 @@ class GraphnetInterface(CVObject):
                 #ny = 60
                 #A, Afull = construct_adjacency_list(nx, ny, 1, return_full=True)
                 #A, Afull = self.gen_adj(X.shape[1])
-                A = prepare_adj(trial_mask, numt=1)
+                #if greymatter_mask is not None:
+                #    A, GMA = prepare_adj(trial_mask, numt=1, gm_mask=greymatter_mask)
+                #else:
+                #    A = prepare_adj(trial_mask, numt=1)
+                #    GMA = None
+                
+                A = prepare_adj(trial_mask, numt=1, gm_mask=greymatter_mask)
+                
             else:
                 A = G.copy()
         
         if problemkey is 'RobustGraphNet':
             problemtype = graphnet.RobustGraphNet
             print 'Robust GraphNet with penalties (l1, l2, l3, delta): ', l1, l2, l3, delta
-            l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)
+            l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)#, gma=GMA)
             l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta)
         
         elif problemkey is 'HuberSVMGraphNet':
             problemtype = graphnet.GraphSVM
             print 'HuberSVM GraphNet with penalties (l1, l2, l3, delta): ', l1, l2, l3, delta
             Y = 2*np.round(np.random.uniform(0, 1, len(Y)))-1
-            l = cwpath.CoordWise((X, Y, A), problemtype)
+            l = cwpath.CoordWise((X, Y, A), problemtype)#, gma=GMA)
             l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta)
             
         elif problemkey is 'NaiveGraphNet':
             problemtype = graphnet.NaiveGraphNet
             print 'Testing GraphNet with penalties (l1, l2, l3): ', l1, l2, l3
-            l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)
+            l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)#, gma=GMA)
             l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3)
             
         elif problemkey is 'NaiveENet':
@@ -260,6 +267,7 @@ class GraphnetInterface(CVObject):
         
         # Solve the problem:
         print 'Solving the problem...'
+        
         coefficients, residuals = l.fit(tol=tol, initial=initial)
         
         self.coefficients = coefficients
@@ -270,10 +278,13 @@ class GraphnetInterface(CVObject):
         if adaptive:
             tic = time.clock()
             l1weights = 1./beta
+            #l1weights = 1./self.coefficients
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)
             l.problem.assign_penalty(l1=l1, l2=l2, l3=l3, delta=delta, l1weights=l1weights, newl1=l1)
             adaptive_coefficients, adaptive_residuals = l.fit(tol=tol, initial=initial)
             print '\t---> Fitting Adaptive GraphNet problem with coordinate descent took: ', time.clock()-tic, 'seconds.'
+            self.adaptive_coefficients = adaptive_coefficients
+            self.adaptive_residuals = adaptive_residuals
         
         
         if scipy_compare:

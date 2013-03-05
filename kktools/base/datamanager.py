@@ -862,6 +862,46 @@ class BrainData(DataManager):
         self.trial_mask = self.trial_mask.astype(np.bool)   
         
         
+    def prepare_greymatter_mask(self, mask_path, greymatter_prefix='greymatter_resamp',
+                                afni_greymatter_dset='/Users/span/abin/TT_caez_gw_18+tlrc.',
+                                afni_index=0, reverse_transpose=True):
+        
+        # resample the gray matter mask to the user's mask:
+        
+        gm_resample_mask = os.path.join(os.path.split(mask_path)[0],greymatter_prefix)
+        old_resamps = glob.glob(gm_resample_mask+'*')
+        for oresamp in old_resamps:
+            try:
+                os.remove(oresamp)
+            except:
+                pass
+        
+        cmd = ['3dresample','-master', mask_path, '-prefix', gm_resample_mask,
+               '-inset', afni_greymatter_dset+'['+str(afni_index)+']']
+        
+        subprocess.call(cmd)
+        
+        niicmd = ['3dAFNItoNIFTI', '-prefix', greymatter_prefix, greymatter_prefix+'+tlrc.']
+        
+        subprocess.call(niicmd)
+        
+        # for now need to have made the trial mask, etc...
+        
+        self.grey_matter = np.zeros(self.trial_mask.shape)
+        
+        gm_mask = load_image(gm_resample_mask+'.nii')
+        gm_mask = np.asarray(gm_mask)
+        
+        self.grey_matter_flat = gm_mask.copy()
+        self.grey_matter_flat.shape = np.product(self.grey_matter_flat.shape)
+            
+        if reverse_transpose:
+            gm_mask = np.transpose(gm_mask, [2, 1, 0])
+            for tr in range(len(self.trial_mask)):
+                self.grey_matter[tr,:,:,:] = gm_mask[:,:,:]
+        
+        
+        
         
     def masked_data(self, nifti, trialsvec, selected_trs=[], mask_path=None, lag=2,
                     reverse_transpose=True, verbose=True):
