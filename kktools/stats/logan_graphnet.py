@@ -26,7 +26,8 @@ from graphnet_mask import adj_from_nii, convert_to_array, prepare_adj
 
 path_to_graphnetC_packages = os.path.abspath('/Users/span/kk_scripts/neuroparser/optimization/cwpath/.')
 sys.path.append(path_to_graphnetC_packages)
-import graphnet
+#import graphnet
+import optimization.cwpath.graphnet as graphnet
 
 # local imports:
 from ..base.crossvalidation import CVObject
@@ -277,20 +278,23 @@ class GraphnetInterface(CVObject):
         
         if adaptive:
             tic = time.clock()
-            l1weights = 1./beta
-            #l1weights = 1./self.coefficients
+            safety = 1e-5
+            l1weights = 1./(self.coefficients[-1]+safety)
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(l1=l1, l2=l2, l3=l3, delta=delta, l1weights=l1weights, newl1=l1)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta, l1weights=l1weights, newl1=l1)
             adaptive_coefficients, adaptive_residuals = l.fit(tol=tol, initial=initial)
             print '\t---> Fitting Adaptive GraphNet problem with coordinate descent took: ', time.clock()-tic, 'seconds.'
-            self.adaptive_coefficients = adaptive_coefficients
-            self.adaptive_residuals = adaptive_residuals
+            
+            self.firstpass_coefficients = self.coefficients
+            self.firstpass_residuals = self.residuals
+            self.coefficients = adaptive_coefficients
+            self.residuals = adaptive_residuals
         
         
         if scipy_compare:
             
             l1 = l1[-1]
-            beta = coefficients[-1]
+            beta = self.coefficients[-1]
         
             print '\t---> Fitting with scipy for comparison...'
             
@@ -350,7 +354,7 @@ class GraphnetInterface(CVObject):
                 
             print '\t---> Coordinate-wise and Scipy optimization agree.'
             
-        return coefficients
+        return self.coefficients
                 
         
         

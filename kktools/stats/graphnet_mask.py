@@ -76,9 +76,6 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
     
     if gm_mask is not None:
         gm = True
-        vgm_mask = gm_mask.copy()
-        #vgm_mask[~mask] = -1
-
     else:
         gm = False
 
@@ -94,16 +91,16 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
             for j in range(ny):
                 for k in range(nz):
                     if mask[t,i,j,k]:
-                        
                         local_map = vmap[max((t-numt),0):(t+numt+1),
                                          max((i-numx),0):(i+numx+1),
                                          max((j-numy),0):(j+numy+1),
                                          max((k-numz),0):(k+numz+1)]
                         
-                        local_gm = vgm_mask[max((t-numt),0):(t+numt+1),
-                                            max((i-numx),0):(i+numx+1),
-                                            max((j-numy),0):(j+numy+1),
-                                            max((k-numz),0):(k+numz+1)]
+                        if gm:
+                            local_gm = gm_mask[max((t-numt),0):(t+numt+1),
+                                               max((i-numx),0):(i+numx+1),
+                                               max((j-numy),0):(j+numy+1),
+                                               max((k-numz),0):(k+numz+1)]
                         
                         local_reg = regions[max((t-numt),0):(t+numt+1),
                                             max((i-numx),0):(i+numx+1),
@@ -117,11 +114,10 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
                         
                         if gm:
                             gmrow = np.array(local_gm[ind], dtype=float)
-                            print gmrow
                         else:
                             gmrow = np.ones(len(adjrow), dtype=float)
                             
-                        adj.append([[a,g] for a,g in zip(adjrow, gmrow)])
+                        adj.append([[adjr, gmr] for adjr, gmr in zip(adjrow, gmrow)])
 
                         #adj.append(np.array(local_map[ind],dtype=int))
                         #if gm:
@@ -129,14 +125,14 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
                         #adj.append(local_map[ind])
                         
     
-    accum = []
-    for i, a in enumerate(adj):
-        for [ax, g] in a:
-            accum.append(g)
+    #accum = []
+    #for i, a in enumerate(adj):
+    #    for [ax, g] in a:
+    #        accum.append(g)
             
-    print np.unique(g), np.unique(vgm_mask)
-    print np.sum(g), np.sum(vgm_mask)
-    stop
+    #print np.unique(g), np.unique(vgm_mask)
+    #print np.sum(g), np.sum(vgm_mask)
+    #stop
                         
     for i, a in enumerate(adj):
         for j, [ax, g] in enumerate(a):
