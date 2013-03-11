@@ -798,19 +798,19 @@ class BrainData(DataManager):
             affine = self.mask_affine
             
         if self.verbose:
-            print 'erasing old files with prefix:', nifti_filename[:-4]
+            print 'erasing old files with prefix:', nifti_filename#[:-4]
             
-        glob_remove(nifti_filename[:-4])
+        glob_remove(nifti_filename)#[:-4])
             
         self.nifti.save_nifti(unmasked, affine, nifti_filename)
         
         time.sleep(0.25)
         
-        self.nifti.convert_to_afni(nifti_filename, nifti_filename[:-4])
+        self.nifti.convert_to_afni(nifti_filename, nifti_filename)#[:-4])
         
         time.sleep(0.25)
         
-        subprocess.call(['3drefit','-view','tlrc',nifti_filename[:-4]+'+orig.'])
+        subprocess.call(['3drefit','-view','tlrc',nifti_filename+'+orig.'])
         
         
         

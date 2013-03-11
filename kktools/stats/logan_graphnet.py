@@ -198,7 +198,8 @@ class GraphnetInterface(CVObject):
     
     def train_graphnet(self, X, Y, trial_mask=None, G=None, l1=None, l2=None, l3=None, delta=None,
                       svmdelta=None, initial=None, adaptive=False, svm=False,
-                      scipy_compare=False, tol=1e-5, greymatter_mask=None):
+                      scipy_compare=False, tol=1e-5, greymatter_mask=None, initial_l1weights=None,
+                      use_adj_time=True):
                 
         if not type(l1) in [list, tuple]:
             l1 = [l1]
@@ -225,42 +226,53 @@ class GraphnetInterface(CVObject):
                 #else:
                 #    A = prepare_adj(trial_mask, numt=1)
                 #    GMA = None
-                
-                A = prepare_adj(trial_mask, numt=1, gm_mask=greymatter_mask)
+                if use_adj_time:
+                    A = prepare_adj(trial_mask, numt=1, gm_mask=greymatter_mask)
+                else:
+                    A = prepare_adj(trial_mask, numt=0, gm_mask=greymatter_mask)
                 
             else:
                 A = G.copy()
+                
+        if initial_l1weights is not None:
+            newl1 = l1
+        else:
+            newl1 = None
         
         if problemkey is 'RobustGraphNet':
             problemtype = graphnet.RobustGraphNet
             print 'Robust GraphNet with penalties (l1, l2, l3, delta): ', l1, l2, l3, delta
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)#, gma=GMA)
-            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta, l1weights=initial_l1weights,
+                                     newl1=newl1)
         
         elif problemkey is 'HuberSVMGraphNet':
             problemtype = graphnet.GraphSVM
             print 'HuberSVM GraphNet with penalties (l1, l2, l3, delta): ', l1, l2, l3, delta
             Y = 2*np.round(np.random.uniform(0, 1, len(Y)))-1
             l = cwpath.CoordWise((X, Y, A), problemtype)#, gma=GMA)
-            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, delta=delta, l1weights=initial_l1weights,
+                                     newl1=newl1)
             
         elif problemkey is 'NaiveGraphNet':
             problemtype = graphnet.NaiveGraphNet
             print 'Testing GraphNet with penalties (l1, l2, l3): ', l1, l2, l3
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)#, gma=GMA)
-            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, l1weights=initial_l1weights,
+                                     newl1=newl1)
             
         elif problemkey is 'NaiveENet':
             problemtype = graphnet.NaiveENet
             print 'Testing ENET with penalties (l1, l2): ', l1, l2
             l = cwpath.CoordWise((X, Y), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l1weights=initial_l1weights,
+                                     newl1=newl1)
             
         elif problemkey is 'Lasso':
             problemtype = graphnet.Lasso
             print 'Testing LASSO with penalty (l1): ', l1
             l = cwpath.CoordWise((X, Y), problemtype, initial_coefs=initial)
-            l.problem.assign_penalty(path_key='l1', l1=l1)
+            l.problem.assign_penalty(path_key='l1', l1=l1, l1weights=initial_l1weights, newl1=newl1)
             
         else:
             print 'Incorrect parameters set (no problem key).'
@@ -435,7 +447,7 @@ class Gridsearch(object):
         jfid.close()
         
         
-    def run_naive_gnet(self, csearch, l1_list=None):
+    def run_naive_gnet(self, csearch, l1_list=None, use_memmap=False, greymatter_mask=None):
         
         cparams = csearch['parameters']
         
@@ -444,16 +456,16 @@ class Gridsearch(object):
         if l1_list:
             print 'l1s:',l1_list
             train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':l1_list,
-                            'l2':cparams['l2'], 'l3':cparams['l3']}
+                            'l2':cparams['l2'], 'l3':cparams['l3'], 'greymatter_mask':greymatter_mask}
         else:
             train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':cparams['l1'],
-                            'l2':cparams['l2'], 'l3':cparams['l3']}
+                            'l2':cparams['l2'], 'l3':cparams['l3'],'greymatter_mask':greymatter_mask}
             
         
         self.gnet.setup_crossvalidation(subject_indices=self.gnet.subject_indices, folds=self.folds)
         
         # REAL:
-        accuracies, average_accuracies, nz_coefs = self.gnet.crossvalidate(train_kwargs, use_memmap=True)
+        accuracies, average_accuracies, nz_coefs = self.gnet.crossvalidate(train_kwargs, use_memmap=use_memmap)
         
         # TEST:
         #accuracies = [[random.random() for x in range(len(l1_list))] for x in range(5)]
@@ -499,10 +511,14 @@ class Gridsearch(object):
     
         
     def fractal_l1_search(self, gnet, graphnet_l1_multisearch=True, reverse_range=True,
-                          name='graphnet'):
+                          name='', adaptive=True, use_memmap=False, greymatter_mask=None):
         
         self.gnet = gnet
         self.records['title'] = name
+        if name:
+            st = time.localtime()
+            timestr = str(st.tm_mon)+'_'+str(st.tm_mday)+'_'+str(st.tm_hour)+'_'+str(st.tm_min)
+            self.logfile_name = name+'_'+timestr+'.json'
         #self.records['l1_start_range'] = self.l1_range
         #self.records['l1_current_range'] = self.l1_range
         self.records['l1_range'] = self.l1_range
@@ -553,7 +569,8 @@ class Gridsearch(object):
                         print 'l2', l2
                         print 'l3', l3
                         
-                    csearches = self.run_naive_gnet(csearch, l1_list=cur_l1_range)
+                    csearches = self.run_naive_gnet(csearch, l1_list=cur_l1_range,
+                                                    use_memmap=use_memmap, greymatter_mask=greymatter_mask)
                     
                     for cs in csearches:
                         self.searches.append(cs)
@@ -610,7 +627,8 @@ class Gridsearch(object):
                                 print 'best acccuracy:', best_acc
                                 print 'l1 for best accuracy:', best_l1
                                 
-                            csearch = self.run_naive_gnet(csearch)
+                            csearch = self.run_naive_gnet(csearch, use_memmap=use_memmap,
+                                                          greymatter_mask=greymatter_mask)
                             
                             self.searches.append(csearch)
                             self.records['searches'] = self.searches
