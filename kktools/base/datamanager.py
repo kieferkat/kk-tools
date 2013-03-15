@@ -109,6 +109,7 @@ class DataManager(Process):
                         self.Y.append(response)
                         
                 elif with_replacement:
+                    
                     positive_trials = []
                     negative_trials = []
                     
@@ -117,26 +118,30 @@ class DataManager(Process):
                             positive_trials.append(trial)
                         elif response == Ybinary[1]:
                             negative_trials.append(trial)
+                            
+                    if min(len(positive_trials), len(negative_trials)) == 0:
+                        del self.subject_indices[subject]
                     
-                    if not replacement_ceiling:
-                        upper_length = max(len(positive_trials), len(negative_trials))
                     else:
-                        upper_length = replacement_ceiling
-                    
-                    for set in [positive_trials, negative_trials]:
-                        random.shuffle(set)
+                        if not replacement_ceiling:
+                            upper_length = max(len(positive_trials), len(negative_trials))
+                        else:
+                            upper_length = replacement_ceiling
                         
-                        for i, trial in enumerate(set):
-                            if i < upper_length:
+                        for set in [positive_trials, negative_trials]:
+                            random.shuffle(set)
+                            
+                            for i, trial in enumerate(set):
+                                if i < upper_length:
+                                    self.subject_indices[subject].append(len(self.X))
+                                    self.X.append(trial)
+                                
+                            for rep_trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
                                 self.subject_indices[subject].append(len(self.X))
-                                self.X.append(trial)
-                            
-                        for rep_trial in [random.sample(set, 1)[0] for i in range(upper_length-len(set))]:
-                            self.subject_indices[subject].append(len(self.X))
-                            self.X.append(rep_trial)
-                            
-                    self.Y.extend([Ybinary[0] for x in range(upper_length)])
-                    self.Y.extend([Ybinary[1] for x in range(upper_length)])
+                                self.X.append(rep_trial)
+                                
+                        self.Y.extend([Ybinary[0] for x in range(upper_length)])
+                        self.Y.extend([Ybinary[1] for x in range(upper_length)])
         
                 if verbose:
                     self._xy_matrix_tracker(Ybinary)
