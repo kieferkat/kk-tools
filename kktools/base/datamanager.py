@@ -265,6 +265,41 @@ class DataManager(Process):
         self.Y = np.array(self.Y)
         
         
+    def merge_datamanagers(self, mergeable_dm):
+        
+        # this assumes that the mergeable dm has an X, Y, and subject_indices dict.
+        # those are the only things that are assimmilated.
+        
+        oX = mergeable_dm.X
+        oY = mergeable_dm.Y
+        oSI = mergeable_dm.subject_indices
+        
+        merge_rows = len(oX)
+        if merge_rows == len(oY):
+            pass
+        else:
+            print 'merge X and merge Y have different lengths ?!'
+            return False
+        
+        self.X.tolist()
+        self.Y.tolist()
+        
+        self.X.extend(oX.tolist())
+        self.Y.extend(oY.tolist())
+        
+        self.X = np.array(self.X)
+        self.Y = np.array(self.Y)
+                
+        for subj, inds in oSI.items():
+            ninds = [x+merge_rows for x in inds]
+            if subj in self.subject_indices:
+                self.subject_indices[subj].extend(ninds)
+            else:
+                print 'merged subject not in original subject_indices dict'
+                self.subject_indices[subj] = ninds
+        
+        
+        
     def delete_subject_design(self, checkpoint=False):
         if checkpoint:
             inp = raw_input('Press any key to delete subject design (preserves self.X and self.Y)')

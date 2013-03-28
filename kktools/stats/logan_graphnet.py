@@ -177,13 +177,13 @@ class GraphnetInterface(CVObject):
             
             for trial, outcome in zip(X, Y):
                 predict = trial*coefset
-                print np.sum(predict)
+                #print np.sum(predict)
                 Ypredsign = np.sign(np.sum(predict))
                 if Ypredsign < 0.:
                     Ypredsign = 0.
                 else:
                     Ypredsign = 1.
-                print Ypredsign, outcome, (Ypredsign == outcome)
+                #print Ypredsign, outcome, (Ypredsign == outcome)
                 correct.append(Ypredsign == outcome)
                 
             fold_accuracy = np.sum(correct) * 1. / len(correct)
@@ -447,7 +447,8 @@ class Gridsearch(object):
         jfid.close()
         
         
-    def run_naive_gnet(self, csearch, l1_list=None, use_memmap=False, greymatter_mask=None):
+    def run_naive_gnet(self, csearch, l1_list=None, use_memmap=False, greymatter_mask=None,
+                       adaptive=False):
         
         cparams = csearch['parameters']
         
@@ -456,10 +457,12 @@ class Gridsearch(object):
         if l1_list:
             print 'l1s:',l1_list
             train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':l1_list,
-                            'l2':cparams['l2'], 'l3':cparams['l3'], 'greymatter_mask':greymatter_mask}
+                            'l2':cparams['l2'], 'l3':cparams['l3'], 'greymatter_mask':greymatter_mask,
+                            'adaptive':adaptive}
         else:
             train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':cparams['l1'],
-                            'l2':cparams['l2'], 'l3':cparams['l3'],'greymatter_mask':greymatter_mask}
+                            'l2':cparams['l2'], 'l3':cparams['l3'],'greymatter_mask':greymatter_mask,
+                            'adaptive':adaptive}
             
         
         self.gnet.setup_crossvalidation(subject_indices=self.gnet.subject_indices, folds=self.folds)
@@ -511,7 +514,7 @@ class Gridsearch(object):
     
         
     def fractal_l1_search(self, gnet, graphnet_l1_multisearch=True, reverse_range=True,
-                          name='', adaptive=True, use_memmap=False, greymatter_mask=None):
+                          name='', adaptive=False, use_memmap=False, greymatter_mask=None):
         
         self.gnet = gnet
         self.records['title'] = name
@@ -542,6 +545,8 @@ class Gridsearch(object):
         best_l3 = -1
         cur_distance = l1max-l1min
         
+        self.log_progress()
+        
         for l3 in self.l3_range:
             for l2 in self.l2_range:
                 
@@ -570,7 +575,8 @@ class Gridsearch(object):
                         print 'l3', l3
                         
                     csearches = self.run_naive_gnet(csearch, l1_list=cur_l1_range,
-                                                    use_memmap=use_memmap, greymatter_mask=greymatter_mask)
+                                                    use_memmap=use_memmap, greymatter_mask=greymatter_mask,
+                                                    adaptive=adaptive)
                     
                     for cs in csearches:
                         self.searches.append(cs)
@@ -628,7 +634,8 @@ class Gridsearch(object):
                                 print 'l1 for best accuracy:', best_l1
                                 
                             csearch = self.run_naive_gnet(csearch, use_memmap=use_memmap,
-                                                          greymatter_mask=greymatter_mask)
+                                                          greymatter_mask=greymatter_mask,
+                                                          adaptive=adaptive)
                             
                             self.searches.append(csearch)
                             self.records['searches'] = self.searches

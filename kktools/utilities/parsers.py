@@ -37,7 +37,7 @@ def subjects(max_length=None, topdir=os.getcwd(), prefixes=[], exclude=[],
 def consprint(input_list, python=True, bash=True):
     
     if python:
-        print '['+','.join([str(x) for x in input_list])+']'
+        print '[\''+'\',\''.join([str(x) for x in input_list])+'\']'
         
     if bash:
         print '( '+' '.join([str(x) for x in input_list])+' )'
