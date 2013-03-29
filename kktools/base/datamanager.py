@@ -75,7 +75,8 @@ class DataManager(Process):
         
         
     def create_XY_matrices(self, subject_design=None, downsample_type=None, with_replacement=False,
-                           replacement_ceiling=None, random_seed=None, Ybinary=[1.,-1.], verbose=True):
+                           replacement_ceiling=None, random_seed=None, Ybinary=[1.,-1.], verbose=True,
+                           Yreplace=[1.,-1]):
         
         
         required_vars = {'subject_design':subject_design}
@@ -106,7 +107,14 @@ class DataManager(Process):
                     for trial, response in zip(trials, responses):
                         self.subject_indices[subject].append(len(self.X))
                         self.X.append(trial)
-                        self.Y.append(response)
+                        if response == Ybinary[0]:
+                            self.Y.append(Yreplace[0])
+                        elif response == Ybinary[1]:
+                            self.Y.append(Yreplace[1])
+                        else:
+                            print 'y value unaccounted for, setting to 0...'
+                            self.Y.append(0.)
+                        #self.Y.append(response)
                         
                 elif with_replacement:
                     
@@ -140,11 +148,11 @@ class DataManager(Process):
                                 self.subject_indices[subject].append(len(self.X))
                                 self.X.append(rep_trial)
                                 
-                        self.Y.extend([Ybinary[0] for x in range(upper_length)])
-                        self.Y.extend([Ybinary[1] for x in range(upper_length)])
+                        self.Y.extend([Yreplace[0] for x in range(upper_length)])
+                        self.Y.extend([Yreplace[1] for x in range(upper_length)])
         
                 if verbose:
-                    self._xy_matrix_tracker(Ybinary)
+                    self._xy_matrix_tracker(Yreplace)
                     
                     
                     
@@ -173,7 +181,7 @@ class DataManager(Process):
                     self.X.append(ptrial)
                     self.subject_indices[nsub].append(len(self.X))
                     self.X.append(ntrial)
-                    self.Y.extend([Ybinary[0],Ybinary[1]])
+                    self.Y.extend([Yreplace[0],Yreplace[1]])
                     
                 if verbose:
                     self._xy_matrix_tracker(Ybinary)
@@ -197,11 +205,11 @@ class DataManager(Process):
                         self.subject_indices[sub].append(len(self.X))
                         self.X.append(trial)
                         
-                self.Y.extend([Ybinary[0] for x in range(upper_length)])
-                self.Y.extend([Ybinary[1] for x in range(upper_length)])
+                self.Y.extend([Yreplace[0] for x in range(upper_length)])
+                self.Y.extend([Yreplace[1] for x in range(upper_length)])
                 
                 if verbose:
-                    self._xy_matrix_tracker(Ybinary)
+                    self._xy_matrix_tracker(Yreplace)
                     
                     
                     
@@ -232,7 +240,7 @@ class DataManager(Process):
                             self.X.append(subject_positives[i])
                             self.subject_indices[subject].append(len(self.X))
                             self.X.append(subject_negatives[i])
-                            self.Y.extend([Ybinary[0],Ybinary[1]])
+                            self.Y.extend([Yreplace[0],Yreplace[1]])
                             
                     elif with_replacement:
                         if not replacement_ceiling:
@@ -255,11 +263,11 @@ class DataManager(Process):
                                 self.subject_indices[subject].append(len(self.X))
                                 self.X.append(trial)
                                 
-                        self.Y.extend([Ybinary[0] for x in range(upper_length)])
-                        self.Y.extend([Ybinary[1] for x in range(upper_length)])
+                        self.Y.extend([Yreplace[0] for x in range(upper_length)])
+                        self.Y.extend([Yreplace[1] for x in range(upper_length)])
                         
                 if verbose:
-                    self._xy_matrix_tracker(Ybinary)
+                    self._xy_matrix_tracker(Yreplace)
                     
         self.X = np.array(self.X)
         self.Y = np.array(self.Y)
@@ -520,8 +528,9 @@ class CsvData(DataManager):
             else:
                 condval = [str(condval)]
             datalist = [str(x) for x in datalist]
-        
+        #print len(datalist), condval
         out = [i for i,x in enumerate(datalist) if x in condval]
+        #print len(out)
         return out
         
     
@@ -548,13 +557,19 @@ class CsvData(DataManager):
                 
                 for variable in variables:
                     if variable == spvar:
+                        #print spvals
                         cinds.append(self._find_inds_where(self.bysubject_data_dict[subject][variable], spvals))
                         
                 basis_inds = self._slice_conditional_inds(cinds)
                 
+                #print cinds
+                #print basis_inds
                 
                 for v in variables:
                     self.sparse_data_dict[subject][v] = [x for i,x in enumerate(self.sparse_data_dict[subject][v]) if i in basis_inds]
+                    #print len(self.sparse_data_dict[subject][v]), v
+                    
+        
                     
     
     def _get_vars_by_conds(self, subject, variable, conditionals):
@@ -627,10 +642,17 @@ class CsvData(DataManager):
             for [varlist, varname] in use_vars:
                 self.sparse_data_dict[subject][varname] = varlist
                 
-                
+        
+        for sub, subdict in self.sparse_data_dict.items():
+            print sub
+            for k,v in subdict.items():
+                print k, len(v)
+         
         if csv_filepath:
             self.write_csv_data(csv_filepath, self.sparse_data_dict)
             
+            
+        
         
         self.independent_names = sorted(self.independent_names)
         self.dependent_name = sorted(self.dependent_name)
