@@ -11,8 +11,8 @@ import matplotlib
 matplotlib.use('agg')
 import pylab as pl
 pl.ion()
-import rpy2
-from rpy2 import robjects as rpy
+#import rpy2
+#from rpy2 import robjects as rpy
 import copy
 import random
 from pprint import pprint
