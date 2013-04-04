@@ -25,11 +25,6 @@ from ..utilities.vector import VectorTools
 
 
 class DataManager(Process):
-    ''' 
-    DataManager is the basic superclass for both the CsvData and BrainData classes
-    (currently). It contains functions that both of those classes can use, particularly
-    construction of the X and Y matrices.
-    '''
     
     def __init__(self, variable_dict=None):
         super(DataManager, self).__init__(variable_dict=variable_dict)
