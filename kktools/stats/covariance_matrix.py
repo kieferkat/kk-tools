@@ -28,7 +28,7 @@ class CovarianceCalculator(object):
 
     def load_nifti(self, niftipath):
         nifti = nib.load(niftipath)
-        niftii_data = nifti.get_data()
+        nifti_data = nifti.get_data()
         nifti_shape = nifti.shape
         nifti_affine = nifti.get_affine()
         return nifti_data, nifti_shape, nifti_affine
@@ -36,7 +36,7 @@ class CovarianceCalculator(object):
 
 
     def load_mask(self, mask_path, transpose=True, flatten=True):
-        mdata, mshape, maffine = load_nifti(mask_path)
+        mdata, mshape, maffine = self.load_nifti(mask_path)
         
         mdata = mdata.astype(np.bool)
 
@@ -46,14 +46,14 @@ class CovarianceCalculator(object):
         self.mask = CustomNiftiObj(data=mdata, shape=mshape, affine=maffine)
 
         if flatten:
-            self.mask.data = self.mask.reshape(np.prod(self.mask.data.shape))
+            self.mask.data = self.mask.data.reshape(np.prod(self.mask.data.shape))
             self.mask.shape_history.append(self.mask.shape)
             self.mask.shape = self.mask.data.shape
 
 
 
-    def load_data(self, data_path, transpose=True, flatten=True, verbose=True):
-        ddata, dshape, daffine = load_nifti(data_path)
+    def load_data(self, data_path, transpose=False, flatten=True, verbose=True):
+        ddata, dshape, daffine = self.load_nifti(data_path)
 
         if transpose:
             ddata = np.transpose(ddata, [3,2,1,0])
@@ -87,16 +87,15 @@ class CovarianceCalculator(object):
         return dataobj
 
 
-    def load_subject_niftis(self, sdirs, niftiname, verbose=True):
+    def load_subject_niftis(self, niftipaths, verbose=True):
 
         self.nifti_dict = {}
 
         if verbose:
             print 'loading in subject niftis to dict...'
 
-        for sdir in sdirs:
-            subject = os.path.split(sdir)[1]
-            nifti = os.path.join(sdir, niftiname)
+        for nifti in niftipaths:
+            subject = os.path.split(os.path.split(nifti)[0])[1]
             subdata = self.load_data(nifti)
             self.nifti_dict[subject] = subdata.data
 
@@ -159,7 +158,7 @@ class CovarianceCalculator(object):
                     print 'single value column found! (bad)'
                     print ndata[row]
 
-        return ndatat
+        return ndata
 
 
     def prepare_nifti_dict(self, randomize_zero_rows=True, normalize_data=True, verbose=True):
