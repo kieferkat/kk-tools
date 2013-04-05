@@ -25,7 +25,7 @@ def adj_from_nii(maskfile,num_time_points,numt=0,numx=1,numy=1,numz=1,regions=No
     return adj
 
 
-def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
+def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None, verbose=True):
     """
     Return adjacency list, where the voxels are considered
     neighbors if they fall in a ball of radius numt, numx, numy, and numz
@@ -114,10 +114,14 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None):
                         
                         if gm:
                             gmrow = np.array(local_gm[ind], dtype=float)
+                            adj.append([[adjr, gmr] for adjr, gmr in zip(adjrow, gmrow)])
+
                         else:
-                            gmrow = np.ones(len(adjrow), dtype=float)
+                            adj.append([[adjr, 1.] for adjr in adjrow])
+                        #else:
+                            #gmrow = np.ones(len(adjrow), dtype=float)
                             
-                        adj.append([[adjr, gmr] for adjr, gmr in zip(adjrow, gmrow)])
+                        
 
                         #adj.append(np.array(local_map[ind],dtype=int))
                         #if gm:

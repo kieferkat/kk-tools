@@ -124,7 +124,7 @@ class GraphnetInterface(CVObject):
             return None
         
         
-    def setup_crossvalidation(self, folds=None, subject_indices=None, leave_mod_in=True):
+    def setup_crossvalidation(self, folds=None, subject_indices=None, leave_mod_in=False):
         if subject_indices:
             self.subject_indices = subject_indices
         if getattr(self, 'subject_indices', None):
@@ -557,7 +557,7 @@ class Gridsearch(object):
         best_l1 = self.best_parameters['l1']
         half_dist = float(self.current_l1_distance)/2.
         temp_min = best_l1 - half_dist
-        temp_max - best_l1 + half_dist
+        temp_max = best_l1 + half_dist
         return min(temp_min, self.l1_hard_min), temp_max
 
 
@@ -571,7 +571,7 @@ class Gridsearch(object):
 
 
     def zoom_gridsearch(self, gnet, name='zoom_gsearch', adaptive=False, use_memmap=False, 
-                         greymatter_mask=None, test_run=False):
+                         greymatter_mask=None, test_run=False, verbose=True):
 
         self.gnet = gnet
         self.records['title'] = name
@@ -582,7 +582,7 @@ class Gridsearch(object):
 
         defaults = {'initial_l1_min':5.,
                     'initial_l1_max':65.,
-                    'l1_stepsizes':[10.,5.,1.],
+                    'l1_stepsizes':[6.,3.,1.],
                     'l1_hard_min':5.,
                     'l1_shrink_coef':.5,
                     'l2_range':[1.,10.,100.,1000.,10000.],
@@ -601,7 +601,7 @@ class Gridsearch(object):
         
         self.records['adaptive'] = adaptive
         self.records['use_memmap'] = use_memmap
-        self.records['greymatter_mask'] = hasattr(self, 'greymatter_mask', False)
+        self.records['greymatter_mask'] = hasattr(self, 'greymatter_mask')
 
         self.records['folds'] = self.folds
         self.records['current_iter'] = 0
@@ -624,7 +624,7 @@ class Gridsearch(object):
             if zoom_n == 0:
                 self.current_l1_distance = self.initial_l1_distance
                 self.current_l1_min = self.initial_l1_min
-                self.current_l1_max - self.initial_l1_max
+                self.current_l1_max = self.initial_l1_max
             else:
                 self.current_l1_distance = self.l1_shrink_coef*self.current_l1_distance
                 self.current_l1_min, self.current_l1_max = self._zoom_determine_l1minmax()
@@ -641,8 +641,7 @@ class Gridsearch(object):
                                                           self.current_l1_max,
                                                           l1_step)
 
-
-            sparse_l1_range = self._zoom_cut_priorl1s(self, self.l1_range, self.parameter_tracker)
+            sparse_l1_range = self._zoom_cut_priorl1s(self.l1_range, self.parameter_tracker)
 
             self.records['l1_ranges'].append(sparse_l1_range)
 
