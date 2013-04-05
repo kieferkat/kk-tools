@@ -29,21 +29,36 @@ class DataManager(Process):
     DataManager is the basic superclass for both the CsvData and BrainData classes
     (currently). It contains functions that both of those classes can use, particularly
     construction of the X and Y matrices.
+    
     '''
     
     def __init__(self, variable_dict=None):
+
         super(DataManager, self).__init__(variable_dict=variable_dict)
         self.verbose = True
         
             
             
-    def recode_variable(self, var_list, oldnew_valdict, allow_unspecified=True,
+    def recode_variable(self, variable_list=[], variable_dict={}, allow_unspecified=True,
                         as_string=False):
+        '''
+        recode variable takes a list of variables to change and a dictionary that
+        has old values as keys and new values as values. it iterates 
+        through the variable_list and makes a new list of recoded varaibles.
+        A bit clunky, yes? needs to be redone or taken out perhaps.
+
+        allow_unspecified : this flag if set to true (a good move) will just keep a
+        variable the same if it doesn't find it in the dict. a True value here will stop
+        the function entirely.
+
+        as_string: True here makes the variables strings, otherwise they are returned as
+        floats.
+        '''
         
         recoded = []
-        for var in var_list:
-            if var in oldnew_valdict.keys():
-                nval = oldnew_valdict[var]
+        for var in variable_list:
+            if var in variable_dict.keys():
+                nval = variable_dict[var]
                 if as_string:
                     recoded.append(str(nval))
                 else:
@@ -70,6 +85,7 @@ class DataManager(Process):
         '''
         A function for verbosity in the create_XY_matrices.
         '''
+
         print 'X (trials) length: ', len(self.X)
         print 'Y (responses) length: ', len(self.Y)
         print 'positive responses: ', self.Y.count(Ybinary[0])
@@ -79,10 +95,26 @@ class DataManager(Process):
         
         
         
-    def create_XY_matrices(self, subject_design=None, downsample_type=None, with_replacement=False,
-                           replacement_ceiling=None, random_seed=None, Ybinary=[1.,-1.], verbose=True,
-                           Yreplace=[1.,-1]):
-        
+    def create_XY_matrices(self, subject_design={}, downsample_type=None, with_replacement=False,
+                           replacement_ceiling=None, random_seed=None, Ybinary=[1.,-1.], Yreplace=[1.,-1],
+                           verbose=True):
+        '''
+        create_XY_matrices: the X and Y matrix creating super-function.
+
+        this function will convert the subject_design dictionary into an X and Y matrix. It requires that
+        subject_design be formatted properly. keys in subject_design must be some indicator of the subject,
+        values are tuples or lists containing the trials list at [0] and the responses list at [1].
+
+        ex:
+        subject_design['ab040313'] = [trials, responses]
+
+        downsample_type     :   downsample type can either be set to None/False, 'subject', or 'trial'.
+                                'subject' downsampling will equalize the number of yes and no responses
+                                within each subject (key) in the subject design dictionary.
+                                'trial' downsampling will equalize the number of yes and no responses over 
+                                the cumulative trials of all the subjects in the subject design dict.
+
+        '''
         
         required_vars = {'subject_design':subject_design}
         self._assign_variables(required_vars)
