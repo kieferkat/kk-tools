@@ -128,7 +128,7 @@ class GraphnetInterface(CVObject):
         if subject_indices:
             self.subject_indices = subject_indices
         if getattr(self, 'subject_indices', None):
-            self.prepare_folds(folds=folds, indices_dict=self.subject_indices, leave_mod_in=True)
+            self.prepare_folds(folds=folds, indices_dict=self.subject_indices, leave_mod_in=leave_mod_in)
         else:
             print 'no subject indices set, cant setup cv folds'
                         
@@ -257,6 +257,10 @@ class GraphnetInterface(CVObject):
         elif problemkey is 'NaiveGraphNet':
             problemtype = graphnet.NaiveGraphNet
             print 'Testing GraphNet with penalties (l1, l2, l3): ', l1, l2, l3
+            print X.shape
+            print Y.shape
+            print len(A)
+            print A[1000]
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)#, gma=GMA)
             l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, l1weights=initial_l1weights,
                                      newl1=newl1)

@@ -95,7 +95,7 @@ class DataManager(Process):
         
         
         
-    def create_XY_matrices(self, subject_design={}, downsample_type=None, with_replacement=False,
+    def create_XY_matrices(self, subject_design=None, downsample_type=None, with_replacement=False,
                            replacement_ceiling=None, random_seed=None, Ybinary=[1.,-1.], Yreplace=[1.,-1],
                            verbose=True):
         '''
@@ -144,9 +144,9 @@ class DataManager(Process):
                     for trial, response in zip(trials, responses):
                         self.subject_indices[subject].append(len(self.X))
                         self.X.append(trial)
-                        if response == Ybinary[0]:
+                        if float(response) == float(Ybinary[0]):
                             self.Y.append(Yreplace[0])
-                        elif response == Ybinary[1]:
+                        elif float(response) == float(Ybinary[1]):
                             self.Y.append(Yreplace[1])
                         else:
                             print 'y value unaccounted for, setting to 0...'
@@ -159,9 +159,9 @@ class DataManager(Process):
                     negative_trials = []
                     
                     for trial, response in zip(trials, responses):
-                        if response == Ybinary[0]:
+                        if float(response) == float(Ybinary[0]):
                             positive_trials.append(trial)
-                        elif response == Ybinary[1]:
+                        elif float(response) == float(Ybinary[1]):
                             negative_trials.append(trial)
                             
                     if min(len(positive_trials), len(negative_trials)) == 0:
@@ -202,9 +202,9 @@ class DataManager(Process):
                 self.subject_indices[subject] = []
                 
                 for trial, response, in zip(trials, responses):
-                    if response == Ybinary[0]:
+                    if float(response) == float(Ybinary[0]):
                         positive_trials.append([subject,trial])
-                    elif response == Ybinary[1]:
+                    elif float(response) == float(Ybinary[1]):
                         negative_trials.append([subject,trial])
                         
             random.shuffle(positive_trials)
@@ -251,6 +251,8 @@ class DataManager(Process):
                     
                     
         elif downsample_type == 'subject':
+
+            print 'inside'
             
             for subject, [trials, responses] in self.subject_design.items():
                 self.subject_indices[subject] = []
@@ -259,13 +261,15 @@ class DataManager(Process):
                 subject_negatives = []
                 
                 for trial, response in zip(trials, responses):
-                    if response == Ybinary[0]:
+                    if float(response) == float(Ybinary[0]):
                         subject_positives.append(trial)
-                    elif response == Ybinary[1]:
+                    elif float(response) == float(Ybinary[1]):
                         subject_negatives.append(trial)
                         
                 random.shuffle(subject_positives)
                 random.shuffle(subject_negatives)
+
+                print len(subject_positives), len(subject_negatives)
                 
                 if min(len(subject_positives), len(subject_negatives)) == 0:
                     del self.subject_indices[subject]
