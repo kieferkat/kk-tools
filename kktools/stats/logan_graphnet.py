@@ -257,10 +257,6 @@ class GraphnetInterface(CVObject):
         elif problemkey is 'NaiveGraphNet':
             problemtype = graphnet.NaiveGraphNet
             print 'Testing GraphNet with penalties (l1, l2, l3): ', l1, l2, l3
-            print X.shape
-            print Y.shape
-            print len(A)
-            print A[1000]
             l = cwpath.CoordWise((X, Y, A), problemtype, initial_coefs=initial)#, gma=GMA)
             l.problem.assign_penalty(path_key='l1', l1=l1, l2=l2, l3=l3, l1weights=initial_l1weights,
                                      newl1=newl1)
@@ -594,7 +590,7 @@ class Gridsearch(object):
 
 
         for gs_var, var_val in defaults.items():
-            if getattr(self, gs_var, None) is None:
+            if getattr(self, gs_var, None) in [None, [], {}, 0., 0, False]:
                 setattr(self, gs_var, var_val)
             self.records[gs_var] = getattr(self, gs_var, None)
 

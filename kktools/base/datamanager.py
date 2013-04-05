@@ -252,7 +252,6 @@ class DataManager(Process):
                     
         elif downsample_type == 'subject':
 
-            print 'inside'
             
             for subject, [trials, responses] in self.subject_design.items():
                 self.subject_indices[subject] = []
@@ -268,8 +267,6 @@ class DataManager(Process):
                         
                 random.shuffle(subject_positives)
                 random.shuffle(subject_negatives)
-
-                print len(subject_positives), len(subject_negatives)
                 
                 if min(len(subject_positives), len(subject_negatives)) == 0:
                     del self.subject_indices[subject]
