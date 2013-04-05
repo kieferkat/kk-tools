@@ -512,7 +512,7 @@ class Gridsearch(object):
 
     def _multi_l1_pass(self, l1_range, l2, l3, reverse_range=True,
                        use_memmap=False, adaptive=False, greymatter_mask=None,
-                       verbose=True):
+                       verbose=True, test_run=False):
 
         cur_l1_range = l1_range[:]
         if reverse_range:
@@ -532,7 +532,7 @@ class Gridsearch(object):
                     
         csearches = self.run_naive_gnet(csearch, l1_list=cur_l1_range,
                                         use_memmap=use_memmap, greymatter_mask=greymatter_mask,
-                                        adaptive=adaptive)
+                                        adaptive=adaptive, test_run=test_run)
                 
         for cs in csearches:
             self.searches.append(cs)
@@ -571,7 +571,7 @@ class Gridsearch(object):
 
 
     def zoom_gridsearch(self, gnet, name='zoom_gsearch', adaptive=False, use_memmap=False, 
-                         greymatter_mask=None):
+                         greymatter_mask=None, test_run=False):
 
         self.gnet = gnet
         self.records['title'] = name
@@ -648,7 +648,7 @@ class Gridsearch(object):
 
             for l3 in self.l3_range:
                 for l2 in self.l2_range:
-                    self._multi_l1_pass(sparse_l1_range, l2, l3)
+                    self._multi_l1_pass(sparse_l1_range, l2, l3, test_run=test_run)
                     for l1 in sparse_l1_range:
                         self.parameter_tracker.append([l1,l2,l3])
 
