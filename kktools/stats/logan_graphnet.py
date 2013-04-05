@@ -380,9 +380,9 @@ class Gridsearch(object):
         self.verbose = True
         self.savedir = savedir
         
-        self.l1_range = []]                    
-        self.l2_range = []
-        self.l3_range = []
+        #self.l1_range = []                    
+        #self.l2_range = []
+        #self.l3_range = []
         
         self.folds = 5
         
@@ -477,7 +477,7 @@ class Gridsearch(object):
                 average_accuracies.append(sum(accs)/len(accs))
             nz_coefs = [random.randint(0,1000) for x in range(len(l1_list))]
 
-            
+
         
         self.accuracies = accuracies
         self.average_accuracies = average_accuracies
@@ -580,17 +580,17 @@ class Gridsearch(object):
             timestr = str(st.tm_mon)+'_'+str(st.tm_mday)+'_'+str(st.tm_hour)+'_'+str(st.tm_min)
             self.logfile_name = name+'_'+timestr+'.json'
 
-        defaults = {'initial_l1_min'5.,
+        defaults = {'initial_l1_min':5.,
                     'initial_l1_max':65.,
-                    'l1_stepsizes':[10.,5.,1.].,
+                    'l1_stepsizes':[10.,5.,1.],
                     'l1_hard_min':5.,
                     'l1_shrink_coef':.5,
-                    'l2_range':[1.,10.,100.,1000.,10000.]
+                    'l2_range':[1.,10.,100.,1000.,10000.],
                     'l3_range':[1.,10.,100.,1000.,10000.]}
 
 
         for gs_var, var_val in defaults.items():
-            if getattr(self, gs_var, None) is None
+            if getattr(self, gs_var, None) is None:
                 setattr(self, gs_var, var_val)
             self.records[gs_var] = getattr(self, gs_var, None)
 
