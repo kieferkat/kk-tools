@@ -558,7 +558,11 @@ class Gridsearch(object):
         half_dist = float(self.current_l1_distance)/2.
         temp_min = best_l1 - half_dist
         temp_max = best_l1 + half_dist
-        return min(temp_min, self.l1_hard_min), temp_max
+
+        if min(temp_min, self.l1_hard_min) == self.l1_hard_min:
+            return self.l1_hard_min, self.l1_hard_min+self.current_l1_distance
+        else
+            return temp_min, temp_max
 
 
     def _zoom_cut_priorl1s(self, l1_list, prior_parameters):

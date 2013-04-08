@@ -9,34 +9,29 @@ import numpy.lib.format as npf
 
 
 
-class CovarMemmap(object):
+class MemmapMatrix(object):
 
     def __init__(self, filepath, verbose=True):
 
-        super(CovarMemmap, self).__init__
+        super(MemmapMatrix, self).__init__
         
         self.filepath = filepath
-
-        self.covtable_allocated = False
-        self.covtable = None
-
+        self.matrix = None
         self.verbose = verbose
 
 
-    def load_covtable(self, filepath):
+    def load_matrix(self, filepath):
 
         if os.path.exists(filepath):
-            self.covtable = npf.open_memmap(filepath, mode='r+', dtype='float32')
+            self.matrix = npf.open_memmap(filepath, mode='r+', dtype='float32')
             if self.verbose:
                 print 'loaded memmap', filepath
-            self.covtable_allocated = True
         else:
             if self.verbose:
                 print 'nonexistant memmap', filepath
-            return None
 
 
-    def delete_covtable(self, filepath):
+    def delete_matrix(self, filepath):
 
         if os.path.exists(filepath):
             os.remove(filepath)
@@ -48,51 +43,46 @@ class CovarMemmap(object):
                 print 'no file to delete'
 
 
-    def allocate_covtable(self, filepath, shape):
+    def allocate_matrix(self, filepath, shape):
 
         if self.verbose:
-            print 'shape of covariance memmap will be', shape
-            print 'allocating memmap for covariance table...'
+            print 'shape of memmap will be', shape
+            print 'allocating memmap...'
 
-        self.delete_covtable(filepath)
+        self.delete_matrix(filepath)
 
-        self.covtable = npf.open_memmap(filepath, mode='w+', dtype='float32', shape=shape)
+        self.matrix = npf.open_memmap(filepath, mode='w+', dtype='float32', shape=shape)
 
         if self.verbose:
             print 'completed allocation of covtable to filename', filepath
 
-        self.covtable_allocated = True
 
+    def memorysafe_covariance(self, data):
 
-    def memorysafe_cov(self, data):
+        if self.verbose:
+            print 'initiating memorysafe covariance calculation...'
 
-        if self.covtable_allocated:
-            if self.verbose:
-                print 'initiating memorysafe covariance calculation...'
+        rows = data.shape[0]
+        cols = data.shape[1]
 
-            rows = data.shape[0]
-            cols = data.shape[1]
-
-            for cov_r in range(rows):
-
-                if self.verbose:
-                    print 'ROW:\t', cov_r
-
-                for cov_c in range(rows):
-
-                    mini_cov = np.cov(data[cov_r], data[cov_c])
-
-                    self.covtable[cov_r,cov_r] = mini_cov[0,0]
-                    self.covtable[cov_r,cov_c] = mini_cov[0,1]
-                    self.covtable[cov_c,cov_r] = mini_cov[1,0]
-                    self.covtable[cov_c,cov_c] = mini_cov[1,1]
-
+        for cov_r in range(rows):
 
             if self.verbose:
-                print 'covariance table calculation is complete!'
+                print 'ROW:\t', cov_r
 
-        else:
-            print 'covariance table has not been allocated (or loaded?)'
+            for cov_c in range(rows):
+
+                mini_cov = np.cov(data[cov_r], data[cov_c])
+
+                self.matrix[cov_r,cov_r] = mini_cov[0,0]
+                self.matrix[cov_r,cov_c] = mini_cov[0,1]
+                self.matrix[cov_c,cov_r] = mini_cov[1,0]
+                self.matrix[cov_c,cov_c] = mini_cov[1,1]
+
+
+        if self.verbose:
+            print 'covariance table calculation is complete!'
+
 
 
 
