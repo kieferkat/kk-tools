@@ -6,6 +6,9 @@ import nibabel as nib
 import numpy as np
 import sklearn.covariance as skcov
 import numpy.lib.format as npf
+import sklearn.linear_model as linmod
+import time
+import pickle, cPickle
 
 
 
@@ -57,7 +60,7 @@ class MemmapMatrix(object):
             print 'completed allocation of covtable to filename', filepath
 
 
-    def memorysafe_covariance(self, data):
+    def memorysafe_cov(self, data):
 
         if self.verbose:
             print 'initiating memorysafe covariance calculation...'
@@ -84,21 +87,26 @@ class MemmapMatrix(object):
             print 'covariance table calculation is complete!'
 
 
+    def memorysafe_dot(self, A, B):
 
+        if self.verbose:
+            print 'initiating memorysafe dot product...'
 
+        Adim = A.shape[0]
+        Bdim = B.shape[1]
 
+        for x in range(Adim):
+            if self.verbose:
+                print 'Arow:', x
 
+            for y in range(Bdim):
+                x_vec = A[x,:]
+                y_vec = B[:,y]
+                dot = np.dot(x_vec, y_vec)
+                self.matrix[x,y] = dot
 
-class CustomNiftiObj(object):
-
-    def __init__(self, data=[], affine=[], shape=[]):
-        super(CustomNiftiObj, self).__init__()
-        self.data = data
-        self.affine = affine
-        self.shape = shape
-        self.shape_history = [shape]
-        self.transposed = False
-
+        if self.verbose:
+            print 'Memorysafe dot completed.' 
 
 
 
@@ -122,27 +130,90 @@ class CovarianceCalculator(object):
 
 
 
-    def load_mask(self, mask_path, transpose=True, flatten=True):
+    def load_mask(self, mask_path, transpose=True, flatten=False):
         mdata, mshape, maffine = self.load_nifti(mask_path)
-        
+        self.original_mask_shape = mshape
+        self.original_mask_affine = maffine
+
         mdata = mdata.astype(np.bool)
 
         if transpose:
             mdata = np.transpose(mdata, [2,1,0])
 
-        self.mask = CustomNiftiObj(data=mdata, shape=mshape, affine=maffine)
+        self.mask = mdata
 
         if flatten:
-            self.mask.data = self.mask.data.reshape(np.prod(self.mask.data.shape))
-            self.mask.shape_history.append(self.mask.shape)
-            self.mask.shape = self.mask.data.shape
+            self.mask = self.mask.reshape(np.prod(self.mask.shape))
 
 
 
-    def load_data(self, data_path, transpose=False, flatten=True, verbose=True):
+    def prepare_3d_adjacency(self, numx=1, numy=1, numz=1, verbose=True):
+
+        if verbose:
+            print 'initializing adjacency components...'
+
+        vmap = np.cumsum(self.mask).reshape(self.mask.shape)
+        mask = np.bool_(self.mask.copy())
+        vmap[~mask] = -1.
+        vmap -= 1 # vmap's values run from 0 to mask.sum()-1
+
+        adj = []
+        nx, ny, nz = mask.shape
+
+        if verbose:
+            print 'constructing adjacency list...'
+
+        for x in range(nx):
+            for y in range(ny):
+                for z in range(nz):
+                    if mask[x,y,z]:
+
+                        local_map = vmap[max((x-numx),0):(x+numx+1),
+                                         max((y-numy),0):(y+numy+1),
+                                         max((z-numz),0):(z+numz+1)]
+
+                        inds = (local_map>-1)
+                        inds = np.bool_(inds)
+                        adjacency_row = np.array(local_map[inds], dtype=int)
+                        adj.append(adjacency_row)
+
+        for i, a in enumerate(adj):
+        #    a[np.equal(a,i)] = -1
+            adj[i] = a.tolist()
+
+        self.adjacency = adj
+
+
+    def mask_and_flatten(self, data, maskdata, reverse_transposed=True, verbose=True):
+
+        # currently only works with reverse transposition.
+        # mask and data must have the same shape!
+
+        if verbose:
+            print 'masking and flattening data...'
+
+        flat_mask = maskdata.copy()
+        flat_mask.shape = np.product(flat_mask.shape)
+
+        masked_data = data.copy()
+
+        if reverse_transposed:
+            masked_data = masked_data.reshape(masked_data.shape[0], np.product(masked_data.shape[1:]))
+            masked_data = masked_data[:,flat_mask]
+        else:
+            masked_data = masked_data.reshape(np.product(masked_data.shape[:-1], masked_data.shape[-1]))
+            masked_data = masked_data[flat_mask,:]
+
+        return masked_data
+
+
+
+    def load_data(self, data_path, reverse_transpose=True, verbose=True):
         ddata, dshape, daffine = self.load_nifti(data_path)
+        self.original_data_shape = dshape
+        self.original_data_affine = daffine
 
-        if transpose:
+        if reverse_transpose:
             ddata = np.transpose(ddata, [3,2,1,0])
             if not getattr(self, 'ntrs', None):
                 self.ntrs = ddata.shape[0]
@@ -150,28 +221,15 @@ class CovarianceCalculator(object):
             if not getattr(self, 'ntrs', None):
                 self.ntrs = ddata.shape[3]
 
-        dataobj = CustomNiftiObj(data=ddata, shape=dshape, affine=daffine)
-
-        if flatten:
-            dataobj.data = dataobj.data.reshape(self.ntrs, np)
-            dataobj.shape_history.append(dataobj.shape)
-            dataobj.shape = dataobj.data.shape
+        data = ddata
 
         if verbose:
             print 'ntrs', self.ntrs
-            print 'data shape', dataobj.shape
+            print 'data shape', data.shape
             print 'masking...'
 
-        dataobj.data = dataobj.data[:,self.mask.data]
 
-        if transpose:
-            if verbose: print 'transposing...'
-            dataobj.data = dataobj.data.T
-            dataobj.shape = dataobj.data.shape
-            dataobj.shape_history.append(dataobj.shape)
-            dataobj.transposed = True
-
-        return dataobj
+        return data
 
 
     def load_subject_niftis(self, niftipaths, verbose=True):
@@ -184,7 +242,198 @@ class CovarianceCalculator(object):
         for nifti in niftipaths:
             subject = os.path.split(os.path.split(nifti)[0])[1]
             subdata = self.load_data(nifti)
-            self.nifti_dict[subject] = subdata.data
+            self.nifti_dict[subject] = subdata
+
+
+    def mask_flatten_subject_niftis(self, normalize=False, verbose=True):
+
+        if verbose:
+            print 'masking and flattening subject niftis...'
+
+        for subject, dataobj in self.nifti_dict.items():
+            self.nifti_dict[subject] = self.mask_and_flatten(dataobj, self.mask)
+
+            if normalize:
+                self.nifti_dict[subject] = self.normalize_data(self.nifti_dict[subject])
+
+
+    def assign_model_subject(self, model_subject_key):
+
+        self.model_subject_key = model_subject_key
+        self.model_subject_data = self.nifti_dict[model_subject_key]
+        #self.model_subject_data = self.normalize_data(self.model_subject_data)
+
+
+
+
+    def create_mapping_to_model(self, subject_key, verbose=True, verbose_iter=1000, testing=False):
+
+        # data should be flattened by this point to correspond to the adjacency
+        # list!
+        # this ONLY works for reverse transposed data, currently (the default behavior!)
+
+        mapstart = time.time()
+
+        subdata = self.nifti_dict[subject_key].copy()
+
+        if not hasattr(self,'mappings'):
+            self.mappings = {}
+        self.mappings[subject_key] = []
+
+        '''
+        enet = linmod.ElasticNetCV(l1_ratio=[.1, .5, .7, .9, .95, .99, 1.],
+                                   precompute='auto',
+                                   max_iter=1000,
+                                   tol=.0001,
+                                   cv=3,
+                                   n_jobs=2)
+        '''
+
+        ridge = linmod.RidgeCV(fit_intercept=False)
+        allzero_errors = 0
+        solzero_errors = 0
+
+        for mvox_ind in range(self.model_subject_data.shape[1]):
+
+            if verbose:
+                if (mvox_ind % verbose_iter == 0):
+                    print 'voxel index: ', mvox_ind
+                    print 'all zero errors:', allzero_errors
+                    print 'solution zero errors:', solzero_errors
+                    print ''
+
+            if testing:
+                self.mappings[subject_key].append([[mvox_ind, 1.]])
+            else:
+
+                voxel_adj = self.adjacency[mvox_ind]
+                model_vector = []
+                iv_matrix = []
+
+                for tr in range(self.model_subject_data.shape[0]):
+                    model_vector.append(self.model_subject_data[tr, mvox_ind])
+
+                    adj_row = []
+                    for vadj in voxel_adj:
+                        adj_row.append(subdata[tr,vadj])
+                    iv_matrix.append(adj_row)
+
+                model_vector = np.array(model_vector)
+                iv_matrix = np.array(iv_matrix)
+
+                if np.sum(model_vector) == 0 or np.sum(iv_matrix) == 0:
+                    allzero_errors += 1
+                    self.mappings[subject_key].append([[mvox_ind, 1.]])
+
+                else:
+                    ridge.fit(iv_matrix, model_vector)
+
+                    if np.sum(ridge.coef_) == 0:
+                        solzero_errors += 1
+                        self.mappings[subject_key].append([[mvox_ind, 1.]])
+                    else:
+                        self.mappings[subject_key].append(zip(voxel_adj, ridge.coef_))
+
+
+        mapend = time.time()
+
+        if verbose:
+            print 'TOTAL TIME ELAPSED', mapend-mapstart, subject_key
+
+
+    def generate_mappings(self, testing=False):
+
+        self.mappings = {}
+        non_model_subs = [x for x in self.nifti_dict.keys() if x != self.model_subject_key]
+        print non_model_subs
+
+        for nmsub in non_model_subs:
+            self.create_mapping_to_model(nmsub, testing=testing)
+
+
+    def save_mappings(self, filepath, method='pickle', verbose=True):
+
+        fid = open(filepath, 'w')
+
+        if method == 'pickle':
+            if verbose:
+                print 'pickling self.mappings to file', filepath
+            #pickler = pickle.Pickler(fid)
+            #pickler.dump(self.mappings)
+            cPickle.dump(self.mappings, fid)
+
+        fid.close()
+
+    def load_mappings(self, filepath, method='pickle', verbose=True):
+
+        fid = open(filepath, 'r')
+
+        if method == 'pickle':
+            if verbose:
+                print 'unpickling mappings from file', filepath
+            #unpickler = pickle.Unpickler(fid)
+            #self.mappings = unpickler.load()
+            self.mappings = cPickle.load(fid)
+
+        fid.close()
+
+
+
+    def mapping_to_nifti(self, subject_key, suffix='pas_falign', reverse_transposed=True, verbose=True,
+                         testing=False):
+
+        if verbose:
+            print 'converting map to new nifti', subject_key
+
+        data = self.nifti_dict[subject_key]
+        mapping = self.mappings[subject_key]
+        ndata = []
+
+        if testing:
+            ndata = data
+        else:
+            for tr in range(data.shape[0]):
+                if verbose:
+                    print 'TR:', tr
+
+                # slightly faster:
+                tr_row = []
+                for vox in range(data.shape[1]):
+                    accumulation = 0.
+                    for a, coef in mapping[vox]:
+                        accumulation += data[tr,a]*coef
+                    tr_row.append(accumulation)
+                ndata.append(np.array(tr_row))
+
+                # slightly slower:
+                #ndata.append([sum([data[tr,a]*coef for a, coef in mapping[vox]]) for vox in range(data.shape[1])])
+
+            ndata = np.array(ndata, dtype=np.float32)
+
+        unmasked = [np.zeros(self.mask.shape) for i in range(ndata.shape[0])]
+
+        if verbose:
+            print 'unmasked shape:', unmasked
+
+        for i in range(ndata.shape[0]):
+            if verbose:
+                print 'transposing tr:', i
+            unmasked[i][np.asarray(self.mask).astype(np.bool)] = np.squeeze(np.array(ndata[i]))
+            if reverse_transposed:
+                unmasked[i] = np.transpose(unmasked[i],[2,1,0])
+
+        unmasked = np.array(unmasked, dtype=np.float32)        
+        unmasked = np.transpose(unmasked, [1,2,3,0])
+        print unmasked.shape
+        print self.original_mask_affine
+
+        filepath = subject_key+'_'+suffix+'.nii'
+        nii = nib.Nifti1Image(unmasked, self.original_mask_affine)
+
+        nii.to_filename(filepath)
+
+
+
 
 
     def normalize_data(self, data, verbose=True):
