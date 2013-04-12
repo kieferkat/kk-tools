@@ -79,6 +79,10 @@ def prepare_adj(mask,numt=0,numx=1,numy=1,numz=1,regions=None, gm_mask=None, ver
     else:
         gm = False
 
+    if verbose:
+        if gm:
+            print 'Constructing adjacency matrix with greymatter mask'
+
     # Create adjacency list
     
     adj = []

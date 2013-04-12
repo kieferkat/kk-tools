@@ -962,9 +962,10 @@ class BrainData(DataManager):
         self.trial_mask = self.trial_mask.astype(np.bool)   
         
         
+
     def prepare_greymatter_mask(self, mask_path, greymatter_prefix='greymatter_resamp',
                                 afni_greymatter_dset='/Users/span/abin/TT_caez_gw_18+tlrc.',
-                                afni_index=0, reverse_transpose=True):
+                                penalty_weight=1., afni_index=0, reverse_transpose=True):
         
         # resample the gray matter mask to the user's mask:
         
@@ -998,9 +999,10 @@ class BrainData(DataManager):
         if reverse_transpose:
             gm_mask = np.transpose(gm_mask, [2, 1, 0])
             for tr in range(len(self.trial_mask)):
-                self.grey_matter[tr,:,:,:] = gm_mask[:,:,:]
+                self.grey_matter[tr,:,:,:] = (gm_mask[:,:,:]*penalty_weight)+(1.-penalty_weight)
         
         
+
         
         
     def masked_data(self, nifti, trialsvec, selected_trs=[], mask_path=None, lag=2,
@@ -1107,7 +1109,7 @@ class BrainData(DataManager):
             
 
     def create_design(self, subject_dirs, nifti_name, respvec_name, selected_trs,
-                      mask_path=None, lag=2, reverse_transpose=True):
+                      mask_path=None, lag=2, reverse_transpose=True, normalize=False):
         
         self.selected_trs = selected_trs
         
@@ -1140,6 +1142,32 @@ class BrainData(DataManager):
             self.subject_design[subject] = [np.array(sX), np.array(sY)]
         
         del(self.subject_data_dict)
+
+
+    def normalize_data(self, data, verbose=True):
+
+        '''
+        a typical normalization function: subtracts the means and divides by
+        the standard deviation, column-wise
+        '''
+
+        if verbose:
+            print 'normalizing dataset column-wise:'
+            print 'pre-normalization sum:', np.sum(data)
+
+        stdev = np.std(data, axis=0)
+        means = np.mean(data, axis=0)
+
+        dnorm = np.zeros(data.shape)
+        dnorm = data-means
+        dnorm = dnorm/stdev
+        
+        dnorm = np.nan_to_num(dnorm)
+
+        if verbose:
+            print 'post-normalization sum:', np.sum(dnorm)
+        
+        return dnorm
         
 
 

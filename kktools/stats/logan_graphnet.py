@@ -561,7 +561,7 @@ class Gridsearch(object):
 
         if min(temp_min, self.l1_hard_min) == self.l1_hard_min:
             return self.l1_hard_min, self.l1_hard_min+self.current_l1_distance
-        else
+        else:
             return temp_min, temp_max
 
 
