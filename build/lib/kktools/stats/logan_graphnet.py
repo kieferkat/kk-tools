@@ -455,11 +455,11 @@ class Gridsearch(object):
             print 'l1s:',l1_list
             train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':l1_list,
                             'l2':cparams['l2'], 'l3':cparams['l3'], 'greymatter_mask':greymatter_mask,
-                            'adaptive':adaptive}
+                            'adaptive':adaptive, 'delta':cparams['delta']}
         else:
             train_kwargs = {'trial_mask':self.gnet.trial_mask, 'l1':cparams['l1'],
                             'l2':cparams['l2'], 'l3':cparams['l3'],'greymatter_mask':greymatter_mask,
-                            'adaptive':adaptive}
+                            'adaptive':adaptive, 'delta':cparams['delta']}
             
         
         self.gnet.setup_crossvalidation(subject_indices=self.gnet.subject_indices, folds=self.folds)
@@ -487,7 +487,7 @@ class Gridsearch(object):
             self.csearches = []
             for ind, l1 in enumerate(l1_list):
                 nsearch = {}
-                nsearch['parameters'] = {'l1':l1, 'l2':cparams['l2'], 'l3':cparams['l3']}
+                nsearch['parameters'] = {'l1':l1, 'l2':cparams['l2'], 'l3':cparams['l3'], 'delta':cparams['delta']}
                 nsearch['parameters']['l1'] = l1
                 group_accuracies = []
                 for i in range(len(self.accuracies)):
@@ -510,7 +510,7 @@ class Gridsearch(object):
         
 
 
-    def _multi_l1_pass(self, l1_range, l2, l3, reverse_range=True,
+    def _multi_l1_pass(self, l1_range, l2, l3, delta=None, reverse_range=True,
                        use_memmap=False, adaptive=False, greymatter_mask=None,
                        verbose=True, test_run=False):
 
@@ -518,7 +518,7 @@ class Gridsearch(object):
         if reverse_range:
             cur_l1_range.reverse()
 
-        cur_params = {'l1':[], 'l2':l2, 'l3':l3}
+        cur_params = {'l1':[], 'l2':l2, 'l3':l3, 'delta':delta}
         csearch = {}
         csearch['search_iter'] = self.search_count
         csearch['parameters'] = cur_params
@@ -528,6 +528,7 @@ class Gridsearch(object):
             print 'l1 range:', cur_l1_range
             print 'l2', l2
             print 'l3', l3
+            print 'delta', delta
 
                     
         csearches = self.run_naive_gnet(csearch, l1_list=cur_l1_range,
@@ -590,7 +591,8 @@ class Gridsearch(object):
                     'l1_hard_min':5.,
                     'l1_shrink_coef':.5,
                     'l2_range':[1.,10.,100.,1000.,10000.],
-                    'l3_range':[1.,10.,100.,1000.,10000.]}
+                    'l3_range':[1.,10.,100.,1000.,10000.],
+                    'deltas':[]}
 
 
         for gs_var, var_val in defaults.items():
@@ -651,9 +653,15 @@ class Gridsearch(object):
 
             for l3 in self.l3_range:
                 for l2 in self.l2_range:
-                    self._multi_l1_pass(sparse_l1_range, l2, l3, test_run=test_run)
-                    for l1 in sparse_l1_range:
-                        self.parameter_tracker.append([l1,l2,l3])
+                    if not self.deltas:
+                        self._multi_l1_pass(sparse_l1_range, l2, l3, test_run=test_run, delta=None, adaptive=adaptive,
+                                            greymatter_mask=greymatter_mask)
+                        for l1 in sparse_l1_range:
+                            self.parameter_tracker.append([l1,l2,l3])
+                    else:
+                        for delta in self.deltas:
+                            self._multi_l1_pass(sparse_l1_range, l2, l3, delta=delta, test_run=test_run, adaptive=adaptive,
+                                                greymatter_mask=greymatter_mask)
 
 
 
