@@ -1,7 +1,7 @@
 
 
 import math
-
+import numpy as np
 
 
 def construct_ridge_regressions(list dataA, list dataB, list adjacency, int trs, int voxels):
@@ -38,28 +38,24 @@ def construct_ridge_regressions(list dataA, list dataB, list adjacency, int trs,
 
 
 
-def expected_voxels_bytr(list data, list mapping, int tr, int voxels, double r2_cutoff, list map_scores):
+def expected_voxels_bytr(list data, list mapping, int tr, int voxels, list scoring_mask):
 
-	cdef double expected, adj_coef, score
-	cdef int adj_ind, voxel_ind, cutoff
+	cdef double expected, adj_coef
+	cdef int adj_ind, voxel_ind, score_bool
 	cdef list outrow
 
 	outrow = []
 
 	for voxel_ind in range(voxels):
 		expected = 0.
-		cutoff = 0
-		if r2_cutoff > 0:
-			score = map_scores[voxel_ind]
-			if score < r2_cutoff:
-				cutoff = 1
+		score_bool = scoring_mask[voxel_ind]
 
-		if cutoff == 0:
+		if score_bool == 1:
 			for adj_ind, adj_coef in mapping[voxel_ind]:
 				expected += (data[tr][adj_ind] * adj_coef)
 		else:
 			expected += data[tr][voxel_ind]
-			
+
 		outrow.append(expected)
 
 	return outrow
@@ -106,6 +102,47 @@ def calculate_correlation(list dataA, list dataB):
 		voxelwise_correlations.append(voxel_r)
 
 	return voxelwise_correlations
+
+
+
+def calculate_theil_sen_slope(list x, list y):
+
+	cdef list slopes
+	cdef int nval, i, j
+	cdef double y_1, y_2, x_1, x_2
+
+	nval = len(x)
+
+	slopes = []
+
+	for i in range(nval-1):
+		for j in range(i, nval):
+			if x[i] != y[j]:
+				y_1 = y[i]
+				y_2 = y[j]
+				x_1 = x[i]
+				x_2 = x[j]
+				if (x_2 - x_1) != 0.:
+					slopes.append((y_2 - y_1) / (x_2 - x_1))
+				else:
+					slopes.append(0.)
+
+	return slopes
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
