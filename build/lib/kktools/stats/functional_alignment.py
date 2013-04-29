@@ -4,12 +4,16 @@ import nibabel as nib
 import numpy as np
 import sklearn.covariance as skcov
 import sklearn.linear_model as linmod
+from sklearn import cross_validation
 import time
 import cPickle
 import pyximport
 pyximport.install()
 import cloops
+import scipy.stats
 from nngarotte import NonNegativeGarrote
+import math
+#from theil_sen import theil_sen
 
 
 
@@ -24,11 +28,14 @@ class CloopsInterface(object):
 		return cloops.construct_ridge_regressions(Alist, Blist, adj, trs, voxels)
 
 
-	def expected_voxels_bytr(self, data, mapping, tr, voxels):
-		return cloops.expected_voxels_bytr(data, mapping, tr, voxels)
+	def expected_voxels_bytr(self, data, mapping, tr, voxels, scoring_mask):
+		return cloops.expected_voxels_bytr(data, mapping, tr, voxels, scoring_mask)
 
 	def calculate_correlation(self, dataA, dataB):
 		return cloops.calculate_correlation(dataA, dataB)
+
+	def calculate_theil_sen_slope(self, x, y):
+		return cloops.calculate_theil_sen_slope(x, y)
 
 
 
@@ -147,10 +154,14 @@ class FAAssistant(object):
 		return ndictA, ndictB
 
 
-	def data_to_nifti(self, data, mask_3d, mask_affine, filepath, save_dtype=np.float32):
+	def data_to_nifti(self, data, mask_3d, mask_affine, filepath, save_dtype=np.float32,
+					  normalize=True):
 
 		print 'saving data to file', filepath
 		trs, voxels = data.shape
+
+		if normalize:
+			data = self.normalize_data(data)
 
 		unmasked = [np.zeros(mask_3d.shape) for i in range(trs)]
 
@@ -503,6 +514,64 @@ class FunctionalAlignment(object):
 
 
 
+	def construct_theil_sen_mask(self, comparator_dict, median_subject, pvalue_thresh=0.05, verbose=True):
+
+		# must have more than one subject in comparator dict!
+
+		trs, voxels = median_subject.shape
+
+		theil_sen_mask = np.zeros(voxels)
+
+		pvalues = []
+		slope_means = []
+
+		for voxel in range(voxels):
+			x_vectors = []
+			y_vector = np.array(median_subject[:,voxel]).tolist()
+
+			if not np.sum(y_vector) == 0:
+				for skey in comparator_dict.keys():
+					subdata = comparator_dict[skey]
+					x_vectors.append(np.array(subdata[:,voxel]).tolist())
+
+				#assert x_vectors[0].shape == y_vector.shape
+
+				theil_sen_slopes = []
+				#print y_vector
+
+				for xv in x_vectors:
+					if np.sum(xv) == 0:
+						theil_sen_slopes.append(0.)
+					else:
+						#output = theil_sen(y_vector, xv, sample=False)
+						#theil_sen_slopes.append(output[0])
+						slopes = self.cloops.calculate_theil_sen_slope(xv, y_vector)
+						medslope = np.median(slopes)
+						#print medslope
+						theil_sen_slopes.append(medslope)
+
+				#print theil_sen_slopes
+				#print scipy.stats.ttest_1samp(np.array(theil_sen_slopes),0.)
+				t_, p_ = scipy.stats.ttest_1samp(np.array(theil_sen_slopes),0.)
+				p_ = np.nan_to_num(p_)
+
+				if p_ < pvalue_thresh:
+					theil_sen_mask[voxel] = 1
+
+				pvalues.append(p_)
+				slope_means.append(np.mean(theil_sen_slopes))
+
+				if verbose:
+					#print 'mean slope, p', np.mean(theil_sen_slopes), p_
+					if (voxel % 500) == 0:
+						print 'voxel', voxel, 'slope, p:', np.mean(slope_means), np.mean(pvalues)
+
+
+		return theil_sen_mask
+
+
+
+
 
 	def create_mapping(self, dataA, dataB, adjacency, method='ridge',
 					   ridge_alphas=[.01,.1,1.,10.], elastic_net_cv_ratios=[.1,.5,.9,.95],
@@ -540,6 +609,7 @@ class FunctionalAlignment(object):
 
 		all_zero_errors = 0
 		solution_zero_errors = 0
+		zero_within_errors = 0
 
 		A_iv_matrices, B_dv_vectors = self.cloops.construct_ridge_regressions(dataA_list,
 																			  dataB_list,
@@ -550,7 +620,7 @@ class FunctionalAlignment(object):
 		for iv, dv, vox in zip(A_iv_matrices, B_dv_vectors, range(voxels)):
 			if (vox % 5000) == 0:
 				if method == 'ridge':
-					print 'preforming ridge regression:', vox
+					print 'preforming ridge regression:', vox, '(zeroed: ', zero_within_errors, ')'
 				elif method == 'elastic_net':
 					print 'preforming elastic net regression:', vox
 					print 'solution zeros:', solution_zero_errors
@@ -571,13 +641,24 @@ class FunctionalAlignment(object):
 
 			else:
 				regression.fit(iv, dv)
-				mscore = regression.score(iv, dv)
+				
+				# new crossvalidated score:
+				#mscore = regression.score(iv, dv)
+				mscores = cross_validation.cross_val_score(regression, iv, dv, cv=6)
+				mscore = mscores.mean()
+
+				# simple check to see if 0 is within the standard deviation of the mean
+				# score. if so, set to zero:
+				if mscore - (mscores.std() / math.sqrt(6)) < 0.:
+					zero_within_errors += 1
+					mscore = 0.
+
 				coefs = regression.coef_
 
 				# testing only!!
 				#print 'alpha, ratio:', regression.alpha_, regression.l1_ratio_
 
-				if np.sum(coefs) == 0.:
+				if np.sum(coefs) == 0. or mscore == 0.:
 					solution_zero_errors += 1
 					mapping.append([[vox,1.]])
 					mapping_score.append(0.0)
@@ -590,6 +671,7 @@ class FunctionalAlignment(object):
 
 		print 'all zero iv or dv errors:', all_zero_errors
 		print 'solution zero errors:', solution_zero_errors
+		print 'percentage zeroed due to error:', float(zero_within_errors)/float(voxels)
 		print 'total time elapsed:', mapend-mapstart, '\n'
 		print 'average mapping score:', np.mean(mapping_score)
 
@@ -648,8 +730,7 @@ class FunctionalAlignment(object):
 
 
 
-	def data_from_mapping(self, data, mapping, test_row_sums=False, r2_score_cutoff=0.0,
-						  map_scores=[]):
+	def data_from_mapping(self, data, mapping, test_row_sums=False, scoring_mask=None):
 
 		print 'creating new data from mapping...'
 
@@ -657,9 +738,8 @@ class FunctionalAlignment(object):
 		data_list = data.tolist()
 		mapped = []
 
-		if not r2_score_cutoff:
-			r2_score_cutoff = 0.0
-			map_scores = []
+		if scoring_mask == None:
+			scoring_mask = [1 for x in range(voxels)]
 
 		convertstart = time.time()
 
@@ -667,7 +747,7 @@ class FunctionalAlignment(object):
 			if (tr % 20) == 0:
 				print 'mapping tr:', tr
 
-			tr_row = self.cloops.expected_voxels_bytr(data_list, mapping, tr, voxels, r2_score_cutoff, map_scores)
+			tr_row = self.cloops.expected_voxels_bytr(data_list, mapping, tr, voxels, scoring_mask)
 			if test_row_sums:
 				print np.sum(tr_row)
 			else:
@@ -682,7 +762,7 @@ class FunctionalAlignment(object):
 
 
 	def map_data(self, nifti_dict, mappings, conserve_memory=False, test_row_sums=False,
-				 r2_score_cutoff=0.0, map_scores=[]]):
+				 scoring_mask=None):
 
 		print 'mapping nifti_dict...'
 
@@ -692,14 +772,73 @@ class FunctionalAlignment(object):
 		for skey in skeys:
 			print 'map of subject', skey
 			data = nifti_dict[skey]
+
 			mapped_data = self.data_from_mapping(data, mappings[skey], test_row_sums=test_row_sums,
-												 r2_score_cutoff=r2_score_cutoff,
-												 map_scores=map_scores)
+												 scoring_mask=None)
 			mapped_niftis[skey] = mapped_data
 
 			if conserve_memory:
 				del nifti_dict[skey]
 				del mappings[skey]
+
+		return mapped_niftis
+
+
+	def score_parser(self, scores, cutoff, cutoff_type):
+
+		if cutoff_type == 'percent':
+
+			minimum = min(scores)
+			maximum = max(scores)
+			ptp = maximum-minimum
+
+			assert cutoff >= 0.0 and cutoff <= 1.0
+
+			cutmax = maximum - ptp*cutoff
+
+			return [1 if x >= cutmax else 0 for x in scores]
+
+		elif cutoff_type == 'raw':
+
+			return [1 if x >= cutoff else 0 for x in scores]
+
+		elif cutoff_type == 'pvalue':
+
+			zscores = scipy.stats.zscore(scores)
+			zthreshold = scipy.stats.norm.isf(cutoff)
+
+			return [1 if x >= zthreshold else 0 for x in zscores]
+
+		elif cutoff_type == 'nonzero':
+
+			return [1 if x > 0. else 0 for x in scores]
+
+
+
+	def map_data_score_cutoff(self, nifti_dict, mappings, mappings_scores, cutoff, conserve_memory=False,
+							  cutoff_type='percent'):
+
+		print 'mapping nifti dict with score cutoff:', cutoff
+		print 'score cutoff type is:', cutoff_type
+
+		mapped_niftis = {}
+		skeys = nifti_dict.keys()
+
+		for skey in skeys:
+			print 'mapping subject', skey
+
+			data = nifti_dict[skey]
+			scores = mappings_scores[skey]
+			scores_bool = self.score_parser(scores, cutoff, cutoff_type)
+			print 'Sum scores:', np.sum(scores_bool)
+			print len(scores_bool)
+			mapped_data = self.data_from_mapping(data, mappings[skey], scoring_mask=scores_bool)
+			mapped_niftis[skey] = mapped_data
+
+			if conserve_memory:
+				del nifti_dict[skey]
+				del mappings[skey]
+				del mappings_scores[skey]
 
 		return mapped_niftis
 
@@ -753,7 +892,7 @@ class FunctionalAlignment(object):
 
 
 	def niftidict_to_nifti(self, nifti_dict, mask, mask_affine, suffix='_aligned.nii',
-						   directory=os.getcwd()):
+						   directory=os.getcwd(), normalize=True):
 
 		print 'converting dict to niftis'
 
@@ -768,12 +907,13 @@ class FunctionalAlignment(object):
 
 			filepath = os.path.join(directory, subject_key+suffix)
 
-			self.assistant.data_to_nifti(data, mask, mask_affine, filepath)
+			self.assistant.data_to_nifti(data, mask, mask_affine, filepath, normalize=normalize)
 
 
 
 
 	# INCOMPLETE:
+	'''
 	def load_subject_npys(self, subject_npys):
 
 		print 'loading subject data...'
@@ -787,7 +927,7 @@ class FunctionalAlignment(object):
 			nifti_dict[skey] = np.load(skey)
 
 		return nifti_dict
-
+	'''
 
 
 

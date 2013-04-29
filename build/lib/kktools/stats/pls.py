@@ -20,7 +20,8 @@ class PLS(Regression):
         
         
     def output_maps(self, X, Y, time_points, nifti_filepath,
-                    threshold=0.01, two_tail=True, verbose=True):
+                    threshold=0.01, two_tail=True, verbose=True,
+                    n_components=2):
         
         if not nifti_filepath.endswith('.nii'):
             nifti_filepath = nifti_filepath+'.nii'
@@ -45,11 +46,11 @@ class PLS(Regression):
         self.data.save_unmasked_coefs(unmasked, nifti_filepath)
         
     
-    def pls_train(self, X, Y, verbose=True):
+    def pls_train(self, X, Y, verbose=True, n_components=2):
         
         Xn = simple_normalize(X)
         
-        pls = PLSRegression()
+        pls = PLSRegression(n_components=n_components)
         
         if verbose:
             print 'fitting canonical pls...'
@@ -74,18 +75,22 @@ class PLS(Regression):
         return accuracy
         
         
-    def crossvalidate(self, indices_dict, folds=None, leave_mod_in=False,
-                      verbose=True):
+    def crossvalidate(self, indices_dict=None, folds=None, leave_mod_in=False,
+                      verbose=True, n_components=2):
         
         
         if not self.crossvalidation_ready:
             if verbose:
                 print 'preparing the crossvalidation folds...'
-            self.prepare_folds(indices_dict=indices_dict, folds=folds,
-                               leave_mod_in=leave_mod_in)
+            if indices_dict is not None:
+                self.prepare_folds(indices_dict=indices_dict, folds=folds,
+                                   leave_mod_in=leave_mod_in)
+            else:
+                self.prepare_folds(indices_dict=self.subject_indices, folds=folds,
+                                   leave_mod_in=leave_mod_in)
             
             
-        train_kwargs = {}
+        train_kwargs = {'n_components':n_components}
         test_kwargs = {}
         
         self.trainresults, self.testresults = self.traintest_crossvalidator(self.pls_train,
@@ -100,7 +105,18 @@ class PLS(Regression):
         if verbose:
             print 'crossvalidation accuracy average'
             pprint(self.cv_average)
-        
+
+
+    def test_n_components(self, components_range):
+
+        self.components_averages = {}
+
+        for cn in components_range:
+            self.crossvalidate(n_components=cn)
+            self.components_averages[cn] = self.cv_average
+
+
+        pprint(self.components_averages)
         
         
         

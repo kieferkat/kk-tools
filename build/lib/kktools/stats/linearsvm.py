@@ -29,14 +29,14 @@ class ScikitsSVM(CVObject):
         self.subject_indices = getattr(self.data, 'subject_indices', None)
         
             
-    def fit_svc(self, X, Y, cache_size=5000, class_weight='auto'):
+    def fit_svc(self, X, Y, cache_size=5000, class_weight=None):
         X = simple_normalize(X)
         clf = svm.SVC(cache_size=cache_size, class_weight=class_weight)
         clf.fit(X, Y)
         return clf
     
     
-    def fit_linearsvc(self, X, Y, class_weight='auto'):
+    def fit_linearsvc(self, X, Y, class_weight=None):
         print 'fitting linearsvm'
         X = simple_normalize(X)
         clf = svm.LinearSVC(class_weight=class_weight)
@@ -52,6 +52,7 @@ class ScikitsSVM(CVObject):
         
         for trial, outcome in zip(X, Y):
             prediction = clf.predict(trial)
+            #print 'prediction, real:', prediction, outcome, np.sum(clf.coef_), np.sum(trial)
             correct.append((prediction[0] == outcome))
             
         accuracy = float(sum(correct))/float(len(correct))
@@ -62,7 +63,6 @@ class ScikitsSVM(CVObject):
     def train_svm(self, X, Y):
         
         print 'Training next group...'
-        #X = simple_normalize(X)
         clf = self.fit_linearsvc(X, Y)
         return clf
     
