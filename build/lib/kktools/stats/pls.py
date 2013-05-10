@@ -107,17 +107,23 @@ class PLS(Regression):
             pprint(self.cv_average)
 
 
-    def test_n_components(self, components_range):
+    def test_n_components(self, components_range, filename='pls_components_log'):
 
         self.components_averages = {}
 
         for cn in components_range:
             self.crossvalidate(n_components=cn)
             self.components_averages[cn] = self.cv_average
+            print 'COMPONENTS TESTS:'
+            pprint(self.components_averages)
 
 
         pprint(self.components_averages)
-        
+        from pprint import pformat
+        fid = open(filename,'w')
+        fid.write('PLS Components Test Results:')
+        fid.write(pformat(self.components_averages))
+        fid.close()
         
         
         

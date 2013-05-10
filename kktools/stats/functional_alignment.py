@@ -1,5 +1,5 @@
 import os, glob
-from pprint import pprint
+from pprint import pprint, pformat
 import nibabel as nib
 import numpy as np
 import sklearn.covariance as skcov
@@ -13,6 +13,8 @@ import cloops
 import scipy.stats
 from nngarotte import NonNegativeGarrote
 import math
+import multiprocessing
+import Queue
 #from theil_sen import theil_sen
 
 
@@ -27,6 +29,8 @@ class CloopsInterface(object):
 	def construct_ridge_regressions(self, Alist, Blist, adj, trs, voxels):
 		return cloops.construct_ridge_regressions(Alist, Blist, adj, trs, voxels)
 
+	def construct_voxel_job(self, Alist, Blist, adj, trs, voxels):
+		return cloops.construct_voxel_job(Alist, Blist, adj, trs, voxels)
 
 	def expected_voxels_bytr(self, data, mapping, tr, voxels, scoring_mask):
 		return cloops.expected_voxels_bytr(data, mapping, tr, voxels, scoring_mask)
@@ -36,6 +40,222 @@ class CloopsInterface(object):
 
 	def calculate_theil_sen_slope(self, x, y):
 		return cloops.calculate_theil_sen_slope(x, y)
+
+
+
+
+
+
+class MappingSlave(multiprocessing.Process):
+
+	def __init__(self, in_queue, out_queue, trs, adjacency, dataA, dataB, regression, mask):
+		multiprocessing.Process.__init__(self)
+		self.in_queue = in_queue
+		self.out_queue = out_queue
+		self.kill_recieved = False
+		self.adjacency = adjacency
+		self.regression = regression
+		self.trs = trs
+		self.dataA = dataA
+		self.dataB = dataB
+		self.cloops = CloopsInterface()
+		self.mask = mask
+		print 'REGRESSION SLAVE ACTIVATED'
+
+
+	def run(self):
+
+		while not self.kill_recieved:
+
+			try:
+				voxel = self.in_queue.get_nowait()
+
+			except Queue.Empty:
+				break
+
+			errors_dict = {}
+			alpha = 0.
+			coefs = [0.]
+
+			if self.mask[voxel] == 0:
+				errors_dict['masked_out'] = 1
+				mapping = [[vox,1.]]
+				mapping_score = 0.
+
+			else:
+
+				[iv, dv, vox] = self.cloops.construct_voxel_job(self.dataA, self.dataB, self.adjacency, 
+					self.trs, voxel)
+
+				iv = np.array(iv)
+				dv = np.array(dv)
+
+				if np.sum(iv) == 0 or np.sum(dv) == 0:
+					errors_dict['iv_or_dv_allzero'] = 1
+					mapping = [[vox, 1.]]
+					mapping_score = 0.
+
+				else:
+					try:
+						self.regression.fit(iv, dv)
+					
+						try:
+							mscore = self.regression.score(iv, dv)
+						except:
+							errors_dict['scoring_error'] = 1
+							mscore = 0.
+
+						coefs = self.regression.coef_
+						alpha = self.regression.alpha_
+
+						# testing only!!
+						#print 'alpha, score, coefsum:', alpha, mscore, np.sum(coefs)
+
+						if mscore == 0.:
+							errors_dict['solution_zero_score'] = 1
+							mapping = [[vox,1.]]
+							mapping_score = 0.
+
+						else:
+							mapping = zip(self.adjacency[vox], coefs)
+							mapping_score = mscore
+
+					except:
+						errors_dict['regression_error'] = 1
+						mapping = [[vox,1.]]
+						mapping_score = 0.
+
+			self.out_queue.put([vox, mapping, mapping_score, alpha, np.sum(coefs), errors_dict])
+
+
+
+
+class QueueSlave(multiprocessing.Process):
+
+	def __init__(self, in_queue, voxels):
+		multiprocessing.Process.__init__(self)
+		self.in_queue = in_queue
+		self.voxels = voxels
+		self.kill_recieved = False
+
+	def run(self):
+		voxind = 0
+		while not self.kill_recieved:
+			if voxind < self.voxels:
+				try:
+					self.in_queue.put(voxind)
+					voxind += 1
+				except:
+					pass
+
+			else:
+				break
+
+
+
+
+class MappingThreadManager(object):
+
+	def __init__(self, threadlimit=6):
+		super(MappingThreadManager, self).__init__()
+		self.thread_limit = threadlimit
+		self.in_queue = multiprocessing.Queue()
+		self.out_queue = multiprocessing.Queue()
+		self.cloops = CloopsInterface()
+		self.completed_voxels = []
+
+
+	def run(self, dataA, dataB, adj, trs, voxels, regression_method, mapping_mask):
+
+		self.trs = trs
+		self.voxels = voxels
+		self.dataA = dataA
+		self.dataB = dataB
+		self.adjacency = adj
+		self.method = regression_method
+		self.mask = mapping_mask
+
+		start_time = time.time()
+
+		queueslave = QueueSlave(self.in_queue, self.voxels)
+		queueslave.start()
+		time.sleep(0.5)
+
+		self.run_slaves()
+		self.monitor_slaves()
+
+		end_time = time.time()
+
+		print 'regression completion in', end_time-start_time, 'seconds.'
+
+		print 'sorting voxels mappings and scores...'
+		self.completed_voxels = sorted(self.completed_voxels, key=lambda x: x[0])
+		organized_mappings = [x[1] for x in self.completed_voxels]
+		organized_scores = [x[2] for x in self.completed_voxels]
+
+		return organized_mappings, organized_scores
+
+
+
+	def run_slaves(self):
+
+		for i in range(self.thread_limit):
+
+			if self.method == 'ridge':
+				regression = linmod.RidgeCV(alphas=ridge_alphas, fit_intercept=False)
+			elif self.method == 'bayes_ridge':
+				regression = linmod.BayesianRidge(n_iter=500, normalize=False, fit_intercept=False)
+			elif self.method == 'ard':
+				regression = linmod.ARDRegression(n_iter=500,fit_intercept=False, normalize=False)
+			elif self.method == 'elastic_net_cv':
+				regression = linmod.ElasticNetCV(l1_ratio=elastic_net_cv_ratios,
+												 fit_intercept=False,
+												 cv=3, n_jobs=8)
+			elif self.method == 'garotte':
+				regression = NonNegativeGarrote(garotte_alpha, fit_intercept=False,
+												estimate_method='ols')
+			elif self.method == 'elastic_net':
+				regression = linmod.ElasticNet(alpha=elastic_net_alpha, l1_ratio=elastic_net_ratio,
+											   fit_intercept=False, normalize=False)
+
+			worker = MappingSlave(self.in_queue, self.out_queue, self.trs, 
+				self.adjacency, self.dataA, self.dataB, regression, self.mask)
+
+			worker.start()
+
+
+
+	def monitor_slaves(self):
+
+		master_errors_dict = {'iv_or_dv_allzero':0, 'scoring_error':0, 
+							  'solution_zero_score':0, 'regression_error':0}
+		coefs = []
+		alphas = []
+
+		while len(self.completed_voxels) < self.voxels:
+
+			[vox, mapping, mapping_score, alpha, coefsum, errors_dict] = self.out_queue.get()
+
+			for error, errflag in errors_dict.items():
+				master_errors_dict[error] += errflag
+
+			coefs.append(coefsum)
+			alphas.append(alpha)
+			self.completed_voxels.append([vox, mapping, mapping_score])
+
+			if (len(self.completed_voxels) % 5000) == 0:
+
+				if self.method == 'ard':
+					print 'performing ARD:', vox, '( median alpha:', np.median(alphas), '- median coefsum:', np.median(coefs), ')'
+				elif self.method == 'bayes_ridge':
+					print 'performing bayesian ridge:', vox, '( median alpha:', np.median(alphas), '- median coefsum:', np.median(coefs), ')'
+
+				pprint(master_errors_dict)
+
+
+
+
+
 
 
 
@@ -179,6 +399,32 @@ class FAAssistant(object):
 			os.remove(filepath)
 
 		nii.to_filename(filepath)
+
+
+	def mapscore_to_nifti(self, data, mask_3d, mask_affine, filepath, save_dtype=np.float32,
+						  normalize=False):
+
+		print 'saving data to file', filepath
+
+		voxels = data.shape[0]
+
+		if normalize:
+			data = self.normalize_data(data)
+
+		unmasked = np.zeros(mask_3d.shape)
+		unmasked[np.asarray(mask_3d).astype(np.bool)] = np.squeeze(np.array(data))
+
+		unmasked = np.transpose(unmasked, [2,1,0])
+		unmasked = np.array(unmasked, dtype=save_dtype)
+
+		nii = nib.Nifti1Image(unmasked, mask_affine)
+
+		if os.path.exists(filepath):
+			print 'overwriting...'
+			os.remove(filepath)
+
+		nii.to_filename(filepath)
+
 
 
 	def normalize_data(self, data):
@@ -486,6 +732,7 @@ class FunctionalAlignment(object):
 		return average_subject
 
 
+
 	def construct_median_subject(self, subject_keys, nifti_dict, save=True, filename='median_subject.pkl'):
 
 		mapsubs = []
@@ -493,6 +740,7 @@ class FunctionalAlignment(object):
 			mapsubs.append(np.array(nifti_dict[msk]))
 
 		trs, voxels = mapsubs[0].shape
+		print 'trs, voxels:', trs, voxels
 
 		median_subject = np.zeros((trs, voxels))
 
@@ -511,6 +759,42 @@ class FunctionalAlignment(object):
 			self.assistant.pickle_object(median_subject, filename)
 
 		return median_subject
+
+
+	def construct_correlation_brain(self, nifti_dict):
+
+		print 'constructing the correlation brain...'
+
+		trs, voxels = nifti_dict[nifti_dict.keys()[0]].shape
+		corr_brain = np.zeros(voxels)
+
+		for voxel in range(voxels):
+			if (voxel % 5000) == 0:
+				print 'voxel', voxel, '...'
+			vox_arrays = []
+			for sub, data in nifti_dict.items():
+				vox_arrays.append(data[:,voxel])
+			vox_arrays = np.array(vox_arrays)
+			corr_table = np.corrcoef(vox_arrays)
+			corr_sums = (np.sum(corr_table, axis=0)-1.)/(len(corr_table)-1)
+			tstat, pval = scipy.stats.ttest_1samp(corr_sums, 0.)
+			corr_brain[voxel] = tstat
+
+		return corr_brain
+
+
+	def mask_from_correlation_brain(self, correlation_brain, threshold=1.96, absolute=True):
+
+		print 'converting correlation statistics to mask...'
+
+		corr_brain = correlation_brain.copy()
+
+		if absolute:
+			corr_brain = np.absolute(corr_brain)
+
+		mask_brain = np.array([0 if x < threshold else 1 for x in corr_brain])
+
+		return mask_brain
 
 
 
@@ -572,15 +856,15 @@ class FunctionalAlignment(object):
 
 
 
-
 	def create_mapping(self, dataA, dataB, adjacency, method='ridge',
 					   ridge_alphas=[.01,.1,1.,10.], elastic_net_cv_ratios=[.1,.5,.9,.95],
-					   elastic_net_alpha=1.0, elastic_net_ratio=0.5, garotte_alpha=0.0005):
+					   elastic_net_alpha=1.0, elastic_net_ratio=0.5, garotte_alpha=0.0005,
+					   threaded=False, mapping_mask=None):
 		
 		print 'mapping A to B...'
 		mapstart = time.time()
 
-		print dataA.shape
+		print dataA.shape, dataB.shape
 		assert dataA.shape == dataB.shape
 		assert dataA.shape[1] == dataB.shape[1] == len(adjacency)
 
@@ -592,109 +876,273 @@ class FunctionalAlignment(object):
 		dataA_list = dataA.tolist()
 		dataB_list = dataB.tolist()
 
-		# assumes data does NOT need intercept / is normalized!
-		if method == 'ridge':
-			regression = linmod.RidgeCV(alphas=ridge_alphas, fit_intercept=False)
-		elif method == 'elastic_net_cv':
-			regression = linmod.ElasticNetCV(l1_ratio=elastic_net_cv_ratios,
-											 fit_intercept=False,
-											 cv=3, n_jobs=8)
-		elif method == 'garotte':
-			regression = NonNegativeGarrote(garotte_alpha, fit_intercept=False,
-											estimate_method='ols')
-		elif method == 'elastic_net':
-			regression = linmod.ElasticNet(alpha=elastic_net_alpha, l1_ratio=elastic_net_ratio,
-										   fit_intercept=False, normalize=False)
+		if mapping_mask is None:
+			print 'setting mapping mask to all 1s (allow all voxels)...'
+			mapping_mask = np.ones(voxels)
 
 
-		all_zero_errors = 0
-		solution_zero_errors = 0
-		zero_within_errors = 0
+		if threaded:
 
-		A_iv_matrices, B_dv_vectors = self.cloops.construct_ridge_regressions(dataA_list,
-																			  dataB_list,
-																			  adjacency,
-																			  trs,
-																			  voxels)
+			mapping_threader = MappingThreadManager()
+			mapping, mapping_score = mapping_threader.run(dataA_list, dataB_list, adjacency, trs, voxels, method,
+				mapping_mask)
+			
+			mapend = time.time()
 
-		for iv, dv, vox in zip(A_iv_matrices, B_dv_vectors, range(voxels)):
-			if (vox % 5000) == 0:
-				if method == 'ridge':
-					print 'preforming ridge regression:', vox, '(zeroed: ', zero_within_errors, ')'
-				elif method == 'elastic_net':
-					print 'preforming elastic net regression:', vox
-					print 'solution zeros:', solution_zero_errors
-				elif method == 'garotte':
-					print 'preforming non-negative garotte regression:', vox
-				elif method == 'elastic_net_cv':
-					print 'preforming elastic net with cross-validation:', vox
-					print 'solution zeros:', solution_zero_errors
+			print 'total time elapsed:', mapend-mapstart, '\n'
+			print 'average mapping score:', np.mean(mapping_score)
 
 
-			iv = np.array(iv)
-			dv = np.array(dv)
+		else:
 
-			if np.sum(iv) == 0 or np.sum(dv) == 0:
-				all_zero_errors += 1
-				mapping.append([[vox, 1.]])
-				mapping_score.append(0.0)
+			# assumes data does NOT need intercept / is normalized!
+			if method == 'ridge':
+				regression = linmod.RidgeCV(alphas=ridge_alphas, fit_intercept=False)
+			elif method == 'bayes_ridge':
+				regression = linmod.BayesianRidge(n_iter=500, normalize=False, fit_intercept=False)
+			elif method == 'ard':
+				regression = linmod.ARDRegression(n_iter=500,fit_intercept=False, normalize=False)
+			elif method == 'elastic_net_cv':
+				regression = linmod.ElasticNetCV(l1_ratio=elastic_net_cv_ratios,
+												 fit_intercept=False,
+												 cv=3, n_jobs=8)
+			elif method == 'garotte':
+				regression = NonNegativeGarrote(garotte_alpha, fit_intercept=False,
+												estimate_method='ols')
+			elif method == 'elastic_net':
+				regression = linmod.ElasticNet(alpha=elastic_net_alpha, l1_ratio=elastic_net_ratio,
+											   fit_intercept=False, normalize=False)
 
-			else:
-				regression.fit(iv, dv)
-				
-				# new crossvalidated score:
-				#mscore = regression.score(iv, dv)
-				mscores = cross_validation.cross_val_score(regression, iv, dv, cv=6)
-				mscore = mscores.mean()
 
-				# simple check to see if 0 is within the standard deviation of the mean
-				# score. if so, set to zero:
-				if mscore - (mscores.std() / math.sqrt(6)) < 0.:
-					zero_within_errors += 1
-					mscore = 0.
+			all_zero_errors = 0
+			solution_zero_errors = 0
+			zero_within_errors = 0
+			alphas_count = [ 0 for x in ridge_alphas ]
+			alpha_history = []
+			lambda_history = []
+			sigma_history = []
+			scoring_errors = 0
+			regression_errors = 0
+			mapping_skips = 0
+		
 
-				coefs = regression.coef_
+			A_iv_matrices, B_dv_vectors = self.cloops.construct_ridge_regressions(dataA_list,
+																				  dataB_list,
+																				  adjacency,
+																				  trs,
+																				  voxels)
 
-				# testing only!!
-				#print 'alpha, ratio:', regression.alpha_, regression.l1_ratio_
 
-				if np.sum(coefs) == 0. or mscore == 0.:
-					solution_zero_errors += 1
-					mapping.append([[vox,1.]])
+			for iv, dv, vox in zip(A_iv_matrices, B_dv_vectors, range(voxels)):
+
+				if (vox % 5000) == 0:
+					if method == 'ridge':
+						print 'preforming ridge regression:', vox, '(zeroed: ', zero_within_errors, ') alphas:', alphas_count
+					elif method == 'bayes_ridge':
+						print 'performing bayesian ridge:', vox, '(zeroed:', zero_within_errors, ' - mapping skips:', mapping_skips, ' - median alpha:', np.median(alpha_history), ')'
+					elif method == 'ard':
+						print 'performing automatic relevance determination:', vox, '(solution zeros:', solution_zero_errors, ' - scoring errors:', scoring_errors, ' - median alpha:', np.median(alpha_history), ')'
+						#print '\t\t median alpha (precision of noise): ', np.median(alpha_history)
+						#print '\t\t median lambda (precision of weights): ', np.median(lambda_history)
+						#print '\t\t median sigma (var/covar of weights): ', np.median(sigma_history)
+					elif method == 'elastic_net':
+						print 'preforming elastic net regression:', vox
+						print 'solution zeros:', solution_zero_errors
+					elif method == 'garotte':
+						print 'preforming non-negative garotte regression:', vox
+					elif method == 'elastic_net_cv':
+						print 'preforming elastic net with cross-validation:', vox
+						print 'solution zeros:', solution_zero_errors
+
+
+				iv = np.array(iv)
+				dv = np.array(dv)
+
+				if np.sum(iv) == 0 or np.sum(dv) == 0:
+					all_zero_errors += 1
+					mapping.append([[vox, 1.]])
 					mapping_score.append(0.0)
 
+				elif mapping_mask[vox] == 0.:
+					mapping_skips += 1
+					mapping.append([[vox,1.]])
+					mapping_score.append(0.)
+
 				else:
-					mapping.append(zip(adjacency[vox], coefs))
-					mapping_score.append(mscore)
+					try:
+						regression.fit(iv, dv)
 
-		mapend = time.time()
+						if method == 'ard':
+							try:
+								mscore = regression.score(iv, dv)
+							except:
+								mscore = 0.
+								scoring_errors += 1
 
-		print 'all zero iv or dv errors:', all_zero_errors
-		print 'solution zero errors:', solution_zero_errors
-		print 'percentage zeroed due to error:', float(zero_within_errors)/float(voxels)
-		print 'total time elapsed:', mapend-mapstart, '\n'
-		print 'average mapping score:', np.mean(mapping_score)
+						else:
+							try:
+								mscores = cross_validation.cross_val_score(regression, iv, dv, cv=6)
+								mscore = np.mean(mscores)
+							except:
+								scoring_errors += 1
+								mscore = 0.
+								mscores = np.array([0, 0, 0, 0, 0, 0])
+								zero_within_errors += 1
+
+							# simple check to see if 0 is within the standard deviation of the mean
+							# score. if so, set to zero:
+							if mscore - (mscores.std() / math.sqrt(6)) <= 0.:
+								zero_within_errors += 1
+								mscore = 0.
+
+
+						coefs = regression.coef_
+						alpha = regression.alpha_
+
+						if method == 'ridge':
+							for i,a in enumerate(ridge_alphas):
+								if a == alpha:
+									alphas_count[i] += 1
+
+						elif method == 'bayes_ridge' or method == 'ard':
+							alpha_history.append(alpha)
+
+
+						# testing only!!
+						#print 'alpha, score, coefsum:', alpha, mscore, np.sum(coefs)
+
+						if mscore == 0.:
+							solution_zero_errors += 1
+							mapping.append([[vox,1.]])
+							mapping_score.append(0.0)
+
+						else:
+							mapping.append(zip(adjacency[vox], coefs))
+							mapping_score.append(mscore)
+							
+					except:
+						regression_errors += 1
+						mapping.append([[vox,1.]])
+						mapping_score.append(0.0)
+					
+
+			mapend = time.time()
+
+			print 'all zero iv or dv errors:', all_zero_errors
+			print 'solution zero errors:', solution_zero_errors
+			print 'percentage zeroed due to error:', float(zero_within_errors)/float(voxels)
+			print 'total time elapsed:', mapend-mapstart, '\n'
+			print 'average mapping score:', np.mean(mapping_score)
 
 		return mapping, mapping_score
 
 
 
+
+
+	def create_average_score(self, mapping_scores, include_nonzero_only=False, normalize=False,
+							 apply_logistic_function=True):
+
+		print 'creating average score from mapping scores...'
+
+		zero_inds = None
+		average = None
+
+		for subk, mapscore in mapping_scores.items():
+
+			print 'on', subk
+			
+			mapscore = np.array(mapscore)
+
+			if include_nonzero_only:
+
+				if zero_inds is None:
+					zero_inds = np.zeros(mapscore.shape[0])
+
+				for i, elem in enumerate(mapscore):
+					if elem == 0.:
+						zero_inds[i] = 1
+
+			if average is None:
+				average = mapscore
+			else:
+				average = average+mapscore
+
+
+		if include_nonzero_only:
+			for i, b in enumerate(zero_inds):
+				if b == 1:
+					average[i] = 0.
+
+		average = average/len(mapping_scores)
+
+		if normalize:
+			avgmean = np.mean(average)
+			avgstd = np.std(average)
+			average = average-avgmean
+			average = average/avgstd
+
+			# apply the logistic function
+			if apply_logistic_function:
+				average = np.array(1. / (1. + np.exp(-1. * average)))
+
+
+		return average
+
+
+
+	def create_median_score(self, mapping_scores, normalize=False, apply_logistic_function=True):
+
+		print 'creating median score from mapping scores...'
+
+		subkeys = mapping_scores.keys()
+
+		voxels = len(mapping_scores[subkeys[0]])
+		median = np.zeros(voxels)
+
+		for voxel in range(voxels):
+			vox_vals = []
+			for sk in subkeys:
+				vox_vals.append(mapping_scores[sk][voxel])
+			median[voxel] = np.median(np.array(vox_vals))
+
+		if normalize:
+			avg_med = np.mean(median)
+			std_med = np.std(median)
+			median = median-avg_med
+			median = median/std_med
+
+			# apply the logistic function
+			if apply_logistic_function:
+				median = np.array(1. / (1. + np.exp(-1. * median)))
+
+
+		return median
+
+
+
+
 	def generate_mappings(self, nifti_dict, model_data, adjacency, ridge_alphas=[.01,.1,1.,10.],
 						  elastic_net_cv_ratios=[.1,.5,.9,.95], garotte_alpha=0.0005, method='ridge', 
-						  conserve_memory=False, elastic_net_alpha=1.0, elastic_net_ratio=0.5):
+						  conserve_memory=False, elastic_net_alpha=1.0, elastic_net_ratio=0.5,
+						  specific_keys=None, threaded=False, mapping_mask=None):
 
 		print 'generating mappings...'
 		mappings_dict = {}
 		mappings_scores = {}
 
-		skeys = nifti_dict.keys()
+		if specific_keys is None:
+			skeys = nifti_dict.keys()
+		else:
+			skeys = specific_keys
 
 		for skey in skeys:
 			print 'creating mapping for subject:', skey
 			mapping, mapping_score = self.create_mapping(nifti_dict[skey], model_data, adjacency, ridge_alphas=ridge_alphas,
 										  				 elastic_net_cv_ratios=elastic_net_cv_ratios, method=method,
 										  				 garotte_alpha=garotte_alpha, elastic_net_alpha=elastic_net_alpha,
-										  				 elastic_net_ratio=elastic_net_ratio)
+										  				 elastic_net_ratio=elastic_net_ratio, threaded=threaded,
+										  				 mapping_mask=mapping_mask)
 			mappings_dict[skey] = mapping
 			mappings_scores[skey] = mapping_score
 
@@ -708,6 +1156,32 @@ class FunctionalAlignment(object):
 		print 'total average score:', np.mean([np.mean(x) for k,x in mappings_scores.items()])
 
 		return mappings_dict, mappings_scores
+
+
+
+
+	def check_median_brain_significance(self, median_brain, absolute=True, keep='dev', inversep=True):
+
+		print 'checking median brain voxels for significance...'
+
+		median_brain = np.array(median_brain)
+		voxels = median_brain.shape[1]
+		print median_brain.shape
+		check_brain = np.zeros(median_brain.shape[1])
+
+		for voxel in range(voxels):
+			timeseries = median_brain[:,voxel]
+			if absolute:
+				timeseries = np.abs(timeseries)
+			t, p = scipy.stats.ttest_1samp(timeseries,0.)
+			if keep == 'p':
+				check_brain[voxel] = (1-p)
+			elif keep == 't':
+				check_brain[voxel] = t
+			elif keep == 'dev':
+				check_brain[voxel] = np.mean(timeseries)
+
+		return check_brain
 
 
 
@@ -816,13 +1290,19 @@ class FunctionalAlignment(object):
 
 
 	def map_data_score_cutoff(self, nifti_dict, mappings, mappings_scores, cutoff, conserve_memory=False,
-							  cutoff_type='percent'):
+							  cutoff_type='percent', single_score=False):
 
 		print 'mapping nifti dict with score cutoff:', cutoff
 		print 'score cutoff type is:', cutoff_type
 
 		mapped_niftis = {}
 		skeys = nifti_dict.keys()
+
+		if single_score:
+			nmappings_scores = {}
+			for skey in skeys:
+				nmappings_scores[skey] = mappings_scores
+			mappings_scores = nmappings_scores
 
 		for skey in skeys:
 			print 'mapping subject', skey

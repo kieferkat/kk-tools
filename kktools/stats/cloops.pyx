@@ -4,6 +4,30 @@ import math
 import numpy as np
 
 
+
+def construct_voxel_job(list dataA, list dataB, list adjacency, int trs, int voxel):
+
+	cdef int tr, voxel_adj_ind
+	cdef list jobs, iv_matrix, dv_vector, voxels_adjacent, adjacency_row
+
+	voxels_adjacent = adjacency[voxel]
+	iv_matrix = []
+	dv_vector = []
+
+	for tr in range(trs):
+		dv_vector.append(dataB[tr][voxel])
+
+		adjacency_row = []
+		for voxel_adj_ind in voxels_adjacent:
+			adjacency_row.append(dataA[tr][voxel_adj_ind])
+
+		iv_matrix.append(adjacency_row)
+
+	job = [iv_matrix, dv_vector, voxel]
+
+	return job
+
+
 def construct_ridge_regressions(list dataA, list dataB, list adjacency, int trs, int voxels):
 
 	cdef int voxel_ind, tr, voxel_adj_ind

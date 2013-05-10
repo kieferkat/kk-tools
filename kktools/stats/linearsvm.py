@@ -5,7 +5,7 @@ import random
 import itertools
 import nibabel as nib
 import scipy.stats as stats
-from pprint import pprint
+from pprint import pprint, pformat
 from ..base.crossvalidation import CVObject
 from ..base.nifti import NiftiTools
 from normalize import simple_normalize
@@ -75,7 +75,7 @@ class ScikitsSVM(CVObject):
             print 'no subject indices set, cant setup cv folds'
         
         
-    def crossvalidate(self, folds=None):
+    def crossvalidate(self, folds=None, logfile=None):
         self.setup_crossvalidation(folds=folds)
         trainresults, testresults = self.traintest_crossvalidator(self.train_svm, self.test_svm,
                                                                   self.trainX, self.trainY,
@@ -83,7 +83,19 @@ class ScikitsSVM(CVObject):
         
         self.fold_accuracies = testresults
         self.average_accuracy = sum(self.fold_accuracies)/len(self.fold_accuracies)
+        self.median_accuracy = np.median(self.fold_accuracies)
         print 'Average accuracy: ', self.average_accuracy
+
+        if logfile is not None:
+            fid = open(logfile, 'w')
+            fid.write('FOLD ACCURACIES:\n')
+            fid.write(pformat(self.fold_accuracies))
+            fid.write('\nAVERAGE ACCCURACY:\n')
+            fid.write(pformat(self.average_accuracy))
+            fid.write('\MEDIAN ACCCURACY:\n')
+            fid.write(pformat(self.median_accuracy))
+            fid.close()
+
         return self.average_accuracy
         
         
