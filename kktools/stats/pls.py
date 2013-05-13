@@ -107,12 +107,12 @@ class PLS(Regression):
             pprint(self.cv_average)
 
 
-    def test_n_components(self, components_range, filename='pls_components_log'):
+    def test_n_components(self, components_range, filename='pls_components_log', folds=None):
 
         self.components_averages = {}
 
         for cn in components_range:
-            self.crossvalidate(n_components=cn)
+            self.crossvalidate(n_components=cn, folds=folds)
             self.components_averages[cn] = self.cv_average
             print 'COMPONENTS TESTS:'
             pprint(self.components_averages)

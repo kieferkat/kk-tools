@@ -8,4 +8,5 @@ setup(name='kktools', author='Kiefer Katovich', packages=['kktools', 'kktools.ba
                                                           'kktools.timecourse',
                                                           'kktools.scriptwriter',
                                                           'kktools.templates',
-                                                          'kktools.defaults'])
+                                                          'kktools.defaults',
+                                                          'kktools.funcalign'])
