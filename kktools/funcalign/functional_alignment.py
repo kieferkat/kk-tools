@@ -7,9 +7,11 @@ import sklearn.linear_model as linmod
 from sklearn import cross_validation
 import time
 import cPickle
+
 import pyximport
 pyximport.install()
 import cloops
+
 import scipy.stats
 from nngarotte import NonNegativeGarrote
 import math
@@ -34,6 +36,9 @@ class CloopsInterface(object):
 
 	def expected_voxels_bytr(self, data, mapping, tr, voxels, scoring_mask):
 		return cloops.expected_voxels_bytr(data, mapping, tr, voxels, scoring_mask)
+
+	def blur_voxels_bytr(self, data, mapping, tr, voxels, scoring_mask, blur_ratio):
+		return cloops.blur_voxels_bytr(data, mapping, tr, voxels, scoring_mask, blur_ratio)
 
 	def calculate_correlation(self, dataA, dataB):
 		return cloops.calculate_correlation(dataA, dataB)
@@ -60,6 +65,7 @@ class MappingSlave(multiprocessing.Process):
 		self.dataB = dataB
 		self.cloops = CloopsInterface()
 		self.mask = mask
+		self.method = method
 		print 'REGRESSION SLAVE ACTIVATED'
 
 
@@ -105,6 +111,21 @@ class MappingSlave(multiprocessing.Process):
 							errors_dict['scoring_error'] = 1
 							mscore = 0.
 
+						'''
+						try:
+							mscores = cross_validation.cross_val_score(regression, iv, dv, cv=5)
+							mscore = np.mean(mscores)
+						except:
+							errors_dict['crossval_scoring_error'] = 1
+							mscore = 0.
+
+						# simple check to see if 0 is within the standard deviation of the mean
+						# score. if so, set to zero:
+						if mscore - (mscores.std() / math.sqrt(5)) <= 0.:
+							errors_dict['zero_within_error'] = 1
+							mscore = 0.
+						'''
+
 						coefs = self.regression.coef_
 						alpha = self.regression.alpha_
 
@@ -127,6 +148,77 @@ class MappingSlave(multiprocessing.Process):
 
 			self.out_queue.put([vox, mapping, mapping_score, alpha, np.sum(coefs), errors_dict])
 
+
+
+class MCDMappingSlave(multiprocessing.Process):
+
+	def __init__(self, in_queue, out_queue, trs, adjacency, dataA, dataB):
+		multiprocessing.Process.__init__(self)
+		self.in_queue = in_queue
+		self.out_queue = out_queue
+		self.kill_recieved = False
+		self.adjacency = adjacency
+		self.mcd = skcov.MinCovDet(assume_centered=True)
+		self.empcov = skcov.EmpiricalCovariance(assume_centered=True)
+		self.trs = trs
+		self.dataA = dataA
+		self.dataB = dataB
+		self.cloops = CloopsInterface()
+		print 'MCD SLAVE ACTIVATED'
+
+
+	def run(self):
+
+		while not self.kill_recieved:
+
+			try:
+				voxel = self.in_queue.get_nowait()
+
+			except Queue.Empty:
+				break
+
+			errors_dict = {}
+			coefs = [0.]
+
+
+			[iv, dv, vox] = self.cloops.construct_voxel_job(self.dataA, self.dataB, self.adjacency, 
+				self.trs, voxel)
+
+			iv = np.array(iv)
+			dv = np.array(dv)
+
+			if np.sum(iv) == 0 or np.sum(dv) == 0:
+				errors_dict['iv_or_dv_allzero'] = 1
+				mapping = [[vox, 1.]]
+				mapping_score = 0.
+
+			else:
+
+				covmatrix = np.zeros((iv.shape[0], iv.shape[1]+1))
+				covmatrix[:,0] = dv
+				covmatrix[:,1:] = iv
+				#covmatrix = np.hstack([dv.T,iv])
+
+				try:
+					self.mcd.fit(covmatrix)
+					coefs = self.mcd.covariance_[1:,0]
+					mapping = zip(self.adjacency[vox], coefs)
+
+				except:
+					errors_dict['mcd_error'] = 1
+
+					try:
+						self.empcov.fit(covmatrix)
+						coefs = self.empcov.covariance_[1:,0]
+						mapping = zip(self.adjacency[vox], coefs)
+					
+					except:
+						errors_dict['empcov_error'] = 1
+						mapping = [[vox,1.]]
+						mapping_score = 0.
+
+
+			self.out_queue.put([vox, mapping, np.sum(coefs), errors_dict])
 
 
 
@@ -156,7 +248,7 @@ class QueueSlave(multiprocessing.Process):
 
 class MappingThreadManager(object):
 
-	def __init__(self, threadlimit=6):
+	def __init__(self, threadlimit=10):
 		super(MappingThreadManager, self).__init__()
 		self.thread_limit = threadlimit
 		self.in_queue = multiprocessing.Queue()
@@ -201,54 +293,74 @@ class MappingThreadManager(object):
 
 		for i in range(self.thread_limit):
 
-			if self.method == 'ridge':
-				regression = linmod.RidgeCV(alphas=ridge_alphas, fit_intercept=False)
-			elif self.method == 'bayes_ridge':
-				regression = linmod.BayesianRidge(n_iter=500, normalize=False, fit_intercept=False)
-			elif self.method == 'ard':
-				regression = linmod.ARDRegression(n_iter=500,fit_intercept=False, normalize=False)
-			elif self.method == 'elastic_net_cv':
-				regression = linmod.ElasticNetCV(l1_ratio=elastic_net_cv_ratios,
-												 fit_intercept=False,
-												 cv=3, n_jobs=8)
-			elif self.method == 'garotte':
-				regression = NonNegativeGarrote(garotte_alpha, fit_intercept=False,
-												estimate_method='ols')
-			elif self.method == 'elastic_net':
-				regression = linmod.ElasticNet(alpha=elastic_net_alpha, l1_ratio=elastic_net_ratio,
-											   fit_intercept=False, normalize=False)
+			if self.method == 'mcdblur':
 
-			worker = MappingSlave(self.in_queue, self.out_queue, self.trs, 
-				self.adjacency, self.dataA, self.dataB, regression, self.mask)
+				worker = MCDMappingSlave(self.in_queue, self.out_queue, self.trs,
+					self.adjacency, self.dataA, self.dataB)
+				worker.start()
 
-			worker.start()
+			else:
+
+				if self.method == 'ridge':
+					regression = linmod.RidgeCV(alphas=ridge_alphas, fit_intercept=False)
+				elif self.method == 'bayes_ridge':
+					regression = linmod.BayesianRidge(n_iter=500, normalize=False, fit_intercept=False)
+				elif self.method == 'ard':
+					regression = linmod.ARDRegression(n_iter=500,fit_intercept=False, normalize=False)
+				elif self.method == 'elastic_net_cv':
+					regression = linmod.ElasticNetCV(l1_ratio=elastic_net_cv_ratios,
+													 fit_intercept=False,
+													 cv=3, n_jobs=8)
+				elif self.method == 'garotte':
+					regression = NonNegativeGarrote(garotte_alpha, fit_intercept=False,
+													estimate_method='ols')
+				elif self.method == 'elastic_net':
+					regression = linmod.ElasticNet(alpha=elastic_net_alpha, l1_ratio=elastic_net_ratio,
+												   fit_intercept=False, normalize=False)
+
+				worker = MappingSlave(self.in_queue, self.out_queue, self.trs, 
+					self.adjacency, self.dataA, self.dataB, regression, self.mask)
+				worker.start()
 
 
 
 	def monitor_slaves(self):
 
-		master_errors_dict = {'iv_or_dv_allzero':0, 'scoring_error':0, 
-							  'solution_zero_score':0, 'regression_error':0}
-		coefs = []
-		alphas = []
+		if self.method == 'mcdblur':
+			master_errors_dict = {'iv_or_dv_allzero':0, 'mcd_error':0, 'empcov_error':0}
+			coefs = []
+		else:
+			master_errors_dict = {'iv_or_dv_allzero':0, 'scoring_error':0, 
+								  'solution_zero_score':0, 'regression_error':0,
+								  'crossval_scoring_error':0, 'zero_within_error':0}
+			coefs = []
+			alphas = []
+
 
 		while len(self.completed_voxels) < self.voxels:
 
-			[vox, mapping, mapping_score, alpha, coefsum, errors_dict] = self.out_queue.get()
+			if self.method == 'mcdblur':
+				[vox, mapping, coefsum, errors_dict] = self.out_queue.get()
+				self.completed_voxels.append([vox, mapping, coefsum])
+			else:
+				[vox, mapping, mapping_score, alpha, coefsum, errors_dict] = self.out_queue.get()
+				alphas.append(alpha)
+				self.completed_voxels.append([vox, mapping, mapping_score])
 
+			coefs.append(coefsum)
 			for error, errflag in errors_dict.items():
 				master_errors_dict[error] += errflag
 
-			coefs.append(coefsum)
-			alphas.append(alpha)
-			self.completed_voxels.append([vox, mapping, mapping_score])
-
-			if (len(self.completed_voxels) % 5000) == 0:
+			if (len(self.completed_voxels) % 500) == 0:
 
 				if self.method == 'ard':
 					print 'performing ARD:', vox, '( median alpha:', np.median(alphas), '- median coefsum:', np.median(coefs), ')'
 				elif self.method == 'bayes_ridge':
 					print 'performing bayesian ridge:', vox, '( median alpha:', np.median(alphas), '- median coefsum:', np.median(coefs), ')'
+					pprint(mapping)
+				elif self.method == 'mcdblur':
+					print 'preforming mcd blur:', vox, '( median coefsum:', np.median(coefs), ')'
+					pprint(mapping)
 
 				pprint(master_errors_dict)
 
@@ -533,6 +645,8 @@ class FunctionalAlignment(object):
 			self.assistant.pickle_object(nifti_dictA, 'nifti_dict_A.pkl')
 			self.assistant.pickle_object(nifti_dictB, 'nifti_dict_B.pkl')
 
+		return nifti_dictA, nifti_dictB
+
 
 	def load_presaved_data(self, pickled_nifti_dict):
 
@@ -580,12 +694,6 @@ class FunctionalAlignment(object):
 
 		dataA = np.array(dataA).tolist()
 		dataB = np.array(dataB).tolist()
-
-		#print np.sum(dataA)
-		#print np.sum(dataB)
-		#print dataA[0:3]
-		#print dataB[0:3]
-		#stop
 
 		voxelwise_correlation = self.cloops.calculate_correlation(dataA, dataB)
 
@@ -665,7 +773,7 @@ class FunctionalAlignment(object):
 
 
 
-	def construct_adjacency(self, mask, numx=1, numy=1, numz=1):
+	def construct_adjacency(self, mask, numx=1, numy=1, numz=1, leave_out_origin=False):
 
 		print 'numx, numy, numz:', numx, numy, numz
 		print 'constructing adjacency matrix...'
@@ -702,8 +810,19 @@ class FunctionalAlignment(object):
 
 		print len(adj)
 
-		for i, a in enumerate(adj):
-			adj[i] = a.tolist()
+		if not leave_out_origin:
+			for i, a in enumerate(adj):
+				adj[i] = a.tolist()
+
+		else:
+			new_adj = []
+			for i, a in enumerate(adj):
+				new_a = []
+				for ind in a:
+					if ind != i:
+						new_a.append(ind)
+				new_adj.append(new_a)
+			adj = new_adj
 
 		return adj
 
@@ -759,6 +878,23 @@ class FunctionalAlignment(object):
 			self.assistant.pickle_object(median_subject, filename)
 
 		return median_subject
+
+
+	def construct_median_brain_tstat(self, median_brain):
+
+		print 'computing t-statistics for the median brain...'
+
+		median_brain = np.array(median_brain)
+
+		trs, voxels = median_brain.shape
+		sig_brain = np.zeros(voxels)
+
+		for voxel in range(voxels):
+			timecourse = median_brain[:,voxel]
+			tstat, pval = scipy.stats.ttest_1samp(timecourse, 0.)
+			sig_brain[voxel] = tstat
+
+		return sig_brain
 
 
 	def construct_correlation_brain(self, nifti_dict):
@@ -1159,6 +1295,41 @@ class FunctionalAlignment(object):
 
 
 
+	def generate_blur_mappings(self, nifti_dict, adjacency, method='bayes_ridge', conserve_memory=False,
+							   specific_keys=None, threaded=True, mapping_mask=None):
+
+		print 'generating blur mappings...'
+		mappings_dict = {}
+		mappings_scores = {}
+
+		if specific_keys is None:
+			skeys = nifti_dict.keys()
+		else:
+			skeys = specific_keys
+
+		for skey in skeys:
+			print '\ncreating blurring mapping for subject:', skey
+
+			mapping, mapping_score = self.create_mapping(nifti_dict[skey], nifti_dict[skey], adjacency,
+														 method=method, threaded=threaded, mapping_mask=mapping_mask)
+
+			mappings_dict[skey] = mapping
+			mappings_scores[skey] = mapping_score
+
+			if conserve_memory:
+				print 'deleting', skey, 'from nifti dict...'
+				del nifti_dict[skey]
+
+		print 'average map scores:'
+		for skey in skeys:
+			print skey, np.mean(mappings_scores[skey])
+
+		print 'total average scores:', np.mean([np.mean(x) for k,x in mappings_scores.items()])
+
+		return mappings_dict, mappings_scores
+
+
+
 
 	def check_median_brain_significance(self, median_brain, absolute=True, keep='dev', inversep=True):
 
@@ -1204,7 +1375,8 @@ class FunctionalAlignment(object):
 
 
 
-	def data_from_mapping(self, data, mapping, test_row_sums=False, scoring_mask=None):
+	def data_from_mapping(self, data, mapping, test_row_sums=False, scoring_mask=None, blurring_maps=False,
+						  blur_ratio=0.5):
 
 		print 'creating new data from mapping...'
 
@@ -1221,7 +1393,11 @@ class FunctionalAlignment(object):
 			if (tr % 20) == 0:
 				print 'mapping tr:', tr
 
-			tr_row = self.cloops.expected_voxels_bytr(data_list, mapping, tr, voxels, scoring_mask)
+			if not blurring_maps:
+				tr_row = self.cloops.expected_voxels_bytr(data_list, mapping, tr, voxels, scoring_mask)
+			else:
+				tr_row = self.cloops.blur_voxels_bytr(data_list, mapping, tr, voxels, scoring_mask, blur_ratio)
+
 			if test_row_sums:
 				print np.sum(tr_row)
 			else:
@@ -1236,7 +1412,7 @@ class FunctionalAlignment(object):
 
 
 	def map_data(self, nifti_dict, mappings, conserve_memory=False, test_row_sums=False,
-				 scoring_mask=None):
+				 scoring_mask=None, blurring_maps=False, blur_ratio=0.5):
 
 		print 'mapping nifti_dict...'
 
@@ -1248,7 +1424,8 @@ class FunctionalAlignment(object):
 			data = nifti_dict[skey]
 
 			mapped_data = self.data_from_mapping(data, mappings[skey], test_row_sums=test_row_sums,
-												 scoring_mask=None)
+												 scoring_mask=None, blurring_maps=blurring_maps,
+												 blur_ratio=blur_ratio)
 			mapped_niftis[skey] = mapped_data
 
 			if conserve_memory:

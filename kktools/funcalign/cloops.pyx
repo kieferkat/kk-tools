@@ -86,6 +86,31 @@ def expected_voxels_bytr(list data, list mapping, int tr, int voxels, list scori
 
 
 
+def blur_voxels_bytr(list data, list mapping, int tr, int voxels, list scoring_mask, double blur_ratio):
+
+	cdef double expected, adj_coef
+	cdef int adj_ind, voxel_ind, score_bool
+	cdef list outrow
+
+	outrow = []
+
+	for voxel_ind in range(voxels):
+		expected = 0.
+		score_bool = scoring_mask[voxel_ind]
+
+		if score_bool == 1:
+			for adj_ind, adj_coef in mapping[voxel_ind]:
+				expected += data[tr][adj_ind] * adj_coef
+		
+		expected *= blur_ratio
+		expected += data[tr][voxel_ind] * (1. - blur_ratio)
+
+		outrow.append(expected)
+
+	return outrow
+
+
+
 
 def calculate_correlation(list dataA, list dataB):
 

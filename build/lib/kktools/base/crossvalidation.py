@@ -185,6 +185,8 @@ class CVObject(Process):
             print 'no Y (either specified or in class)'
             return False
         
+        #print fullY
+
         trainresults = []
         testresults = []
         
@@ -206,7 +208,9 @@ class CVObject(Process):
                 subX = self.subselect_from_memmap(trainX)
             #nothing = raw_input('subX loaded.')
             
+            #print fullY, trainY
             subY = self.subselect(fullY, trainY)
+            #print subY
             #nothing = raw_input('subY loaded.')
                 
             trainpartial = functools.partial(trainfunction, subX, subY, **train_kwargs_dict)

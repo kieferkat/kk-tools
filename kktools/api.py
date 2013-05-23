@@ -15,6 +15,8 @@ from stats.genetic import GeneticAlgorithm
 #from stats.particleswarm import ParticleSwarm
 #from stats.logan_graphnet import GraphnetInterface
 
+#from funcalign.functional_alignment import FunctionalAlignment
+
 from utilities.cleaners import glob_remove
 import utilities.parsers as parsers
 import utilities.vector as vector

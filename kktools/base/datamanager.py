@@ -91,8 +91,150 @@ class DataManager(Process):
         print 'positive responses: ', self.Y.count(Ybinary[0])
         print 'negative responses: ', self.Y.count(Ybinary[1])
         
+
+    def _xy_matrix_tracker_multiclass(self, classes):
+
+        print 'X (trials) length: ', len(self.X)
+        print 'Y (responses) length: ', len(self.Y)
+        for ycls in classes:
+            print 'class', ycls, 'responses:', self.Y.count(ycls)
         
         
+    def create_XY_matrices_multiclass(self, subject_design=None, downsample_type=None, with_replacement=False,
+                                      replacement_ceiling=None, random_seed=None, classes=[]):
+
+        required_vars = {'subject_design':subject_design}
+        self._assign_variables(required_vars)
+        if not self._check_variables(required_vars): return False
+        
+        
+        self.random_seed = random_seed or getattr(self,'random_seed',None)
+        
+        
+        if self.random_seed:
+            print self.random_seed
+            np.random.seed(self.random_seed)
+            random.seed(self.random_seed)
+
+        self.X = []
+        self.Y = []
+        self.subject_indices = {}
+
+        if not downsample_type:
+
+            for subject, [trials, responses] in self.subject_design.items():
+                self.subject_indices[subject] = []
+
+                if not with_replacement:
+                    for trial, response in zip(trials, responses):
+                        
+                        self.subject_indices[subject].append(len(self.X))
+                        self.X.append(trial)
+                        self.Y.append(float(response))
+
+                elif with_replacement:
+
+                    class_dict = {}
+                    class_trials = {}
+                    for c in classes:
+                        class_dict[int(c)] = 0
+                        class_trials[int(c)] = []
+                    
+                    for trial, response in zip(trials, responses):
+                        class_dict[int(response)] += 1
+                        class_trials[int(response)].append(trial)
+
+                    delete_sub = False
+                    for c, v in class_dict.items():
+                        if v == 0:
+                            delete_sub = True
+
+                    if delete_sub:
+                        del self.subject_indices[subject]
+                        print 'deleting', subject, 'from indices... zero of one class type'
+                    
+                    else:
+                        if not replacement_ceiling:
+                            upper = max(class_dict.values())
+                        else:
+                            upper = replacement_ceiling
+
+                        for c, cl_set in class_trials.items():
+                            random.shuffle(cl_set)
+
+                            for i, trial in enumerate(cl_set):
+                                if i < upper:
+                                    self.subject_indices[subject].append(len(self.X))
+                                    self.X.append(trial)
+
+                            for rep_trial in [random.sample(cl_set,1)[0] for i in range(upper-len(cl_set))]:
+                                self.subject_indices[subject].append(len(self.X))
+                                self.X.append(rep_trial)
+
+                            self.Y.extend([c for x in range(upper)])
+
+                self._xy_matrix_tracker_multiclass(classes)
+
+
+        elif downsample_type == 'subject':
+            
+            for subject, [trials, responses] in self.subject_design.items():
+                print subject, len(trials), len(responses)
+                self.subject_indices[subject] = []
+                
+                subclass_dict = {}
+                subclass_trials = {}
+                for c in classes:
+                    subclass_dict[int(c)] = 0
+                    subclass_trials[int(c)] = []
+                
+                for trial, response in zip(trials, responses):
+                    #print response, len(trial)
+                    subclass_dict[int(response)] += 1
+                    subclass_trials[int(response)].append(trial)
+                        
+                if min(subclass_dict.values()) == 0:
+                    del self.subject_indices[subject]
+                    print 'deleting', subject, 'from indices... zero of one class type'
+
+                else:
+                    for c, trials in subclass_trials.items():
+                        random.shuffle(trials)
+
+                    if not with_replacement:
+                        for i in range(min(subclass_dict.values())):
+                            #pprint(subclass_trials)
+                            for c in subclass_trials.keys():
+                                self.subject_indices[subject].append(len(self.X))
+                                self.X.append(subclass_trials[c][i])
+                                self.Y.append(c)
+
+                    elif with_replacement:
+                        if not replacement_ceiling:
+                            upper = max(self.subclass_dict.values())
+                        else:
+                            upper = replacement_ceiling
+
+                        for c, subcls_set in subclass_trials.items():
+
+                            for i, trial in enumerate(subcls_set):
+                                if i < upper:
+                                    self.subject_indices[subject].append(len(self.X))
+                                    self.X.append(trial)
+                                    self.Y.append(c)
+
+                            for trial in [random.sample(subcls_set, 1)[0] for i in range(upper-len(subcls_set))]:
+                                self.subject_indices[subject].append(len(self.X))
+                                self.X.append(trial)
+                                self.Y.append(c)
+
+                self._xy_matrix_tracker_multiclass(classes)
+                    
+        self.X = np.array(self.X)
+        self.Y = np.array(self.Y)
+        #pprint(self.Y)
+
+
         
         
     def create_XY_matrices(self, subject_design=None, downsample_type=None, with_replacement=False,

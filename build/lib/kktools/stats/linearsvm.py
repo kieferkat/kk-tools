@@ -17,9 +17,10 @@ from threshold import threshold_by_pvalue, threshold_by_rawrange
 
 class ScikitsSVM(CVObject):
     
-    def __init__(self, data_obj=None, variable_dict=None, folds=None):
+    def __init__(self, data_obj=None, variable_dict=None, folds=None, regC=1.0):
         super(ScikitsSVM, self).__init__(variable_dict=variable_dict, data_obj=data_obj)
         self.set_folds(folds)
+        self.regC = regC
         self.nifti = NiftiTools()
         
         self.X = getattr(self.data, 'X', None)
@@ -36,10 +37,13 @@ class ScikitsSVM(CVObject):
         return clf
     
     
-    def fit_linearsvc(self, X, Y, class_weight=None):
+    def fit_linearsvc(self, X, Y, class_weight=None, C=None):
+        if C is None:
+            C = self.regC
         print 'fitting linearsvm'
         X = simple_normalize(X)
-        clf = svm.LinearSVC(class_weight=class_weight)
+        #print Y
+        clf = svm.LinearSVC(class_weight=class_weight, C=C)
         clf.fit(X, Y)
         return clf
     
@@ -75,7 +79,7 @@ class ScikitsSVM(CVObject):
             print 'no subject indices set, cant setup cv folds'
         
         
-    def crossvalidate(self, folds=None, logfile=None):
+    def crossvalidate(self, folds=None, logfile=None, ttest_mean=0.5):
         self.setup_crossvalidation(folds=folds)
         trainresults, testresults = self.traintest_crossvalidator(self.train_svm, self.test_svm,
                                                                   self.trainX, self.trainY,
@@ -84,6 +88,9 @@ class ScikitsSVM(CVObject):
         self.fold_accuracies = testresults
         self.average_accuracy = sum(self.fold_accuracies)/len(self.fold_accuracies)
         self.median_accuracy = np.median(self.fold_accuracies)
+        self.accuracy_variance = np.var(self.fold_accuracies)
+        self.accuracy_std = np.var(self.fold_accuracies)
+        self.tstat, self.pval = stats.ttest_1samp(self.fold_accuracies,ttest_mean)
         print 'Average accuracy: ', self.average_accuracy
 
         if logfile is not None:
@@ -92,8 +99,16 @@ class ScikitsSVM(CVObject):
             fid.write(pformat(self.fold_accuracies))
             fid.write('\nAVERAGE ACCCURACY:\n')
             fid.write(pformat(self.average_accuracy))
-            fid.write('\MEDIAN ACCCURACY:\n')
+            fid.write('\nMEDIAN ACCCURACY:\n')
             fid.write(pformat(self.median_accuracy))
+            fid.write('\nACCCURACY VARIANCE:\n')
+            fid.write(pformat(self.accuracy_variance))
+            fid.write('\nACCCURACY STDEV:\n')
+            fid.write(pformat(self.accuracy_std))
+            fid.write('\nACCURACY TSTAT:\n')
+            fid.write(pformat(self.tstat))
+            fid.write('\nACCURACY P-VAL:\n')
+            fid.write(pformat(self.pval))
             fid.close()
 
         return self.average_accuracy
