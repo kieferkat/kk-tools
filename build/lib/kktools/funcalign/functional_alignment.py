@@ -37,8 +37,8 @@ class CloopsInterface(object):
 	def expected_voxels_bytr(self, data, mapping, tr, voxels, scoring_mask):
 		return cloops.expected_voxels_bytr(data, mapping, tr, voxels, scoring_mask)
 
-	def blur_voxels_bytr(self, data, mapping, tr, voxels, scoring_mask, blur_ratio):
-		return cloops.blur_voxels_bytr(data, mapping, tr, voxels, scoring_mask, blur_ratio)
+	def blur_voxels_bytr(self, data, mapping, tr, voxels, scoring_mask):
+		return cloops.blur_voxels_bytr(data, mapping, tr, voxels, scoring_mask)
 
 	def calculate_correlation(self, dataA, dataB):
 		return cloops.calculate_correlation(dataA, dataB)
@@ -197,20 +197,26 @@ class MCDMappingSlave(multiprocessing.Process):
 				covmatrix = np.zeros((iv.shape[0], iv.shape[1]+1))
 				covmatrix[:,0] = dv
 				covmatrix[:,1:] = iv
+
+				covmatrix = (covmatrix - np.mean(covmatrix, axis=0))/np.std(covmatrix, axis=0)
 				#covmatrix = np.hstack([dv.T,iv])
 
 				try:
-					self.mcd.fit(covmatrix)
-					coefs = self.mcd.covariance_[1:,0]
-					mapping = zip(self.adjacency[vox], coefs)
+					#self.mcd.fit(covmatrix)
+					#coefs = self.mcd.covariance_[:,0]
+					
+					self.empcov.fit(covmatrix)
+					coefs = self.empcov.covariance_[0]
+					
+					mapping = [[vox, coefs[0]]] + zip(self.adjacency[vox], coefs[1:])
 
 				except:
 					errors_dict['mcd_error'] = 1
 
 					try:
 						self.empcov.fit(covmatrix)
-						coefs = self.empcov.covariance_[1:,0]
-						mapping = zip(self.adjacency[vox], coefs)
+						coefs = self.empcov.covariance_[:,0]
+						mapping = [[vox, coefs[0]]] + zip(self.adjacency[vox], coefs[1:])
 					
 					except:
 						errors_dict['empcov_error'] = 1
@@ -491,6 +497,7 @@ class FAAssistant(object):
 
 		print 'saving data to file', filepath
 		trs, voxels = data.shape
+		print 'X shape', data.shape
 
 		if normalize:
 			data = self.normalize_data(data)
@@ -503,6 +510,9 @@ class FAAssistant(object):
 
 		unmasked = np.transpose(unmasked, [1,2,3,0])
 		unmasked = np.array(unmasked, dtype=save_dtype)
+
+		print 'new shape', unmasked.shape
+		print 'affine', mask_affine
 
 		nii = nib.Nifti1Image(unmasked, mask_affine)
 
@@ -1375,8 +1385,7 @@ class FunctionalAlignment(object):
 
 
 
-	def data_from_mapping(self, data, mapping, test_row_sums=False, scoring_mask=None, blurring_maps=False,
-						  blur_ratio=0.5):
+	def data_from_mapping(self, data, mapping, test_row_sums=False, scoring_mask=None, blurring_maps=False):
 
 		print 'creating new data from mapping...'
 
@@ -1396,7 +1405,7 @@ class FunctionalAlignment(object):
 			if not blurring_maps:
 				tr_row = self.cloops.expected_voxels_bytr(data_list, mapping, tr, voxels, scoring_mask)
 			else:
-				tr_row = self.cloops.blur_voxels_bytr(data_list, mapping, tr, voxels, scoring_mask, blur_ratio)
+				tr_row = self.cloops.blur_voxels_bytr(data_list, mapping, tr, voxels, scoring_mask)
 
 			if test_row_sums:
 				print np.sum(tr_row)
@@ -1412,7 +1421,7 @@ class FunctionalAlignment(object):
 
 
 	def map_data(self, nifti_dict, mappings, conserve_memory=False, test_row_sums=False,
-				 scoring_mask=None, blurring_maps=False, blur_ratio=0.5):
+				 scoring_mask=None, blurring_maps=False):
 
 		print 'mapping nifti_dict...'
 
@@ -1424,8 +1433,7 @@ class FunctionalAlignment(object):
 			data = nifti_dict[skey]
 
 			mapped_data = self.data_from_mapping(data, mappings[skey], test_row_sums=test_row_sums,
-												 scoring_mask=None, blurring_maps=blurring_maps,
-												 blur_ratio=blur_ratio)
+												 scoring_mask=None, blurring_maps=blurring_maps)
 			mapped_niftis[skey] = mapped_data
 
 			if conserve_memory:
@@ -1549,7 +1557,7 @@ class FunctionalAlignment(object):
 
 
 	def niftidict_to_nifti(self, nifti_dict, mask, mask_affine, suffix='_aligned.nii',
-						   directory=os.getcwd(), normalize=True):
+						   directory=os.getcwd(), normalize=False):
 
 		print 'converting dict to niftis'
 

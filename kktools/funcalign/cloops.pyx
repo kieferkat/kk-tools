@@ -86,9 +86,9 @@ def expected_voxels_bytr(list data, list mapping, int tr, int voxels, list scori
 
 
 
-def blur_voxels_bytr(list data, list mapping, int tr, int voxels, list scoring_mask, double blur_ratio):
+def blur_voxels_bytr(list data, list mapping, int tr, int voxels, list scoring_mask):
 
-	cdef double expected, adj_coef
+	cdef double expected, adj_coef, covar_sum
 	cdef int adj_ind, voxel_ind, score_bool
 	cdef list outrow
 
@@ -96,14 +96,23 @@ def blur_voxels_bytr(list data, list mapping, int tr, int voxels, list scoring_m
 
 	for voxel_ind in range(voxels):
 		expected = 0.
+		covar_sum = 0.
 		score_bool = scoring_mask[voxel_ind]
 
 		if score_bool == 1:
 			for adj_ind, adj_coef in mapping[voxel_ind]:
-				expected += data[tr][adj_ind] * adj_coef
-		
-		expected *= blur_ratio
-		expected += data[tr][voxel_ind] * (1. - blur_ratio)
+				#if adj_ind != voxel_ind:
+				#	covar_sum += abs(adj_coef)
+				
+				covar_sum += abs(adj_coef)
+
+
+			for adj_ind, adj_coef in mapping[voxel_ind]:
+				#if adj_ind != voxel_ind:
+				#	expected += data[tr][adj_ind] * (adj_coef/covar_sum)
+
+				expected += data[tr][adj_ind] * (adj_coef/covar_sum)
+
 
 		outrow.append(expected)
 
