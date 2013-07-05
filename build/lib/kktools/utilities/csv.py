@@ -156,9 +156,11 @@ class CsvTools(object):
         # all subjects must have same coldict keys for now
         lines = []
         for subject, coldict in subjectdict.items():
+            print subject, coldict.keys()
             if lines == []:
                 header = ['subject']+sorted(coldict.keys())
                 lines.append(header)
+                print header
             subjectlines = self._coldict_linehelper(coldict, lines[0][1:])
             lines.extend([[subject]+l for l in subjectlines])
             

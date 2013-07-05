@@ -202,12 +202,15 @@ class MCDMappingSlave(multiprocessing.Process):
 				#covmatrix = np.hstack([dv.T,iv])
 
 				try:
-					#self.mcd.fit(covmatrix)
-					#coefs = self.mcd.covariance_[:,0]
-					
-					self.empcov.fit(covmatrix)
-					coefs = self.empcov.covariance_[0]
-					
+					self.mcd.fit(covmatrix)
+					coefs = self.mcd.covariance_[:,0]
+					#coefs = self.mcd.covariance_[0]**2 * np.sign(self.mcd.covariance_[0])
+
+					#self.empcov.fit(covmatrix)
+					#coefs = self.empcov.covariance_[0]
+					#coefs = self.empcov.covariance_[0]**2 * np.sign(self.empcov.covariance_[0])
+					#coefs = np.sqrt(np.absolute(self.empcov.covariance_[0])) * np.sign(self.empcov.covariance_[0])
+
 					mapping = [[vox, coefs[0]]] + zip(self.adjacency[vox], coefs[1:])
 
 				except:
@@ -254,7 +257,7 @@ class QueueSlave(multiprocessing.Process):
 
 class MappingThreadManager(object):
 
-	def __init__(self, threadlimit=10):
+	def __init__(self, threadlimit=4):
 		super(MappingThreadManager, self).__init__()
 		self.thread_limit = threadlimit
 		self.in_queue = multiprocessing.Queue()
@@ -277,7 +280,7 @@ class MappingThreadManager(object):
 
 		queueslave = QueueSlave(self.in_queue, self.voxels)
 		queueslave.start()
-		time.sleep(0.5)
+		time.sleep(3)
 
 		self.run_slaves()
 		self.monitor_slaves()

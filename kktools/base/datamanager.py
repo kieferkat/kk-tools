@@ -673,6 +673,7 @@ class CsvData(DataManager):
     
     
     def write_csv_data(self, filepath, data_dict):
+        pprint(data_dict.keys())
         csvlines = self.csv.subject_csvdicts_tolines(data_dict)
         self.csv.write(csvlines, filepath)
 
