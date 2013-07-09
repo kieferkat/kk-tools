@@ -25,3 +25,5 @@ from afni.preprocess import Preprocessor
 from base.solutioncheck import SolutionChecker
 
 #import stats.regression as regression
+
+from sharpblur.sharpblur import SharpBlur

@@ -9,4 +9,5 @@ setup(name='kktools', author='Kiefer Katovich', packages=['kktools', 'kktools.ba
                                                           'kktools.scriptwriter',
                                                           'kktools.templates',
                                                           'kktools.defaults',
-                                                          'kktools.funcalign'])
+                                                          'kktools.funcalign',
+                                                          'kktools.sharpblur'])
