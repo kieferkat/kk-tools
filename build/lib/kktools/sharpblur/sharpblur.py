@@ -76,7 +76,7 @@ class ComputeFunctions(object):
 
 class ImageHuber(rr.smooth_atom):
 
-	def __init__(self, X, t=1.345, offset=None, quadratic=None, initial=None, coef=1.,
+	def __init__(self, X, Y=None, t=1.345, offset=None, quadratic=None, initial=None, coef=1.,
 		scale=None, step_size=1, verbose=True):
 
 		self.verbose = verbose
@@ -99,7 +99,12 @@ class ImageHuber(rr.smooth_atom):
 
 		# set up X, Y, huber loss w/ t
 		self.X = X
-		self.Y = X[:, step_size:(I-step_size), step_size:(J-step_size), step_size:(K-step_size)]
+
+		if Y is None:
+			self.Y = X[:, step_size:(I-step_size), step_size:(J-step_size), step_size:(K-step_size)]
+		else:
+			self.Y = Y[:, step_size:(I-step_size), step_size:(J-step_size), step_size:(K-step_size)]
+
 		self.huber = HuberT(t=t)
 
 		if scale is None:
@@ -211,13 +216,13 @@ class SharpBlur(object):
 		return 1. / L
 
 
-	def blur(self, X, huber_t=1.345, nonnegative=True, force_coefs_positive=False,
+	def blur(self, X, Y=None, huber_t=1.345, nonnegative=True, force_coefs_positive=False,
 		scale_huber=True, beta_boost=1.):
 
 		# Get an approximate OLS fit to find out the rough scale of the data.
 		# Basically squared error with t=1e6:
 		if self.verbose: print 'Initializing Huber loss class...'
-		loss = ImageHuber(X, step_size=self.step, t=huber_t)
+		loss = ImageHuber(X, Y=Y, step_size=self.step, t=huber_t)
 
 		# Set up non-negativity constraint:
 		if nonnegative:
@@ -254,9 +259,9 @@ class SharpBlur(object):
 		if self.verbose: print 'Initializing final problem with scale & warm-start...'
 		
 		if scale_huber:
-			final_loss = ImageHuber(X, step_size=self.step, t=huber_t, scale=scale)
+			final_loss = ImageHuber(X, Y=Y, step_size=self.step, t=huber_t, scale=scale)
 		else:
-			final_loss = ImageHuber(X, step_size=self.step, t=huber_t)
+			final_loss = ImageHuber(X, Y=Y, step_size=self.step, t=huber_t)
 
 		if nonnegative:
 			final_problem = rr.simple_problem(final_loss, constraint) #constrained
@@ -295,7 +300,14 @@ class SharpBlur(object):
 
 		final_data = ( (final_loss.Y * self.Y_weight) + final_Yhat ) / (self.Y_weight + final_wsum)
 
-		return final_data
+		full_data_out = np.zeros(self.data_shape)
+		if self.verbose:
+			print 'data output shape:', full_data_out.shape
+			print 'data current shape:', final_data.shape
+		full_data_out[:,self.step:-self.step,self.step:-self.step,self.step:-self.step] = final_data
+		if self.verbose: print 'shape-justified data output shape:', full_data_out.shape
+
+		return full_data_out
 
 
 
@@ -309,13 +321,13 @@ class SharpBlur(object):
 			data_out = zdata_out
 
 		# initialize data_output
-		full_data_out = np.zeros(self.data_shape)
-		if self.verbose:
-			print 'data output shape:', full_data_out.shape
-			print 'data current shape:', data_out.shape
-		full_data_out[:,self.step:-self.step,self.step:-self.step,self.step:-self.step] = data_out
-		data_out = full_data_out
-		if self.verbose: print 'shape-justified data output shape:', data_out.shape
+		#full_data_out = np.zeros(self.data_shape)
+		#if self.verbose:
+		#	print 'data output shape:', full_data_out.shape
+		#	print 'data current shape:', data_out.shape
+		#full_data_out[:,self.step:-self.step,self.step:-self.step,self.step:-self.step] = data_out
+		#data_out = full_data_out
+		#if self.verbose: print 'shape-justified data output shape:', data_out.shape
 
 		# create reverse-mask to zero non-brain areas:
 		if self.verbose: print 'Creating reverse-mask...'
@@ -341,20 +353,25 @@ class SharpBlur(object):
 
 
 
-	def run(self, nifti_path, mask_path, output_path, detrend=True, zscore_in=False,
+	def run(self, nifti_path, mask_path, output_path, iterations=1, detrend=True, zscore_in=False,
 		zscore_out=True, nonnegative=True, force_coefs_positive=False, scale_huber=True):
 
 		# load in the X data matrix and the mask, detrend and zscore if desired:
 		X = self.load_data_mask(nifti_path, mask_path, detrend=detrend, zscore_in=zscore_in)
 
+		Xorig = X.copy()
+		Xout = X.copy()
+
 		# preform the sharpblur on X
-		Xout = self.blur(X, nonnegative=nonnegative, force_coefs_positive=force_coefs_positive,
-			scale_huber=scale_huber)
+		#Xout = self.blur(X, nonnegative=nonnegative, force_coefs_positive=force_coefs_positive,
+		#	scale_huber=scale_huber)
+
+		for level in range(iterations):
+			Xout = self.blur(Xout, Y=Xorig, nonnegative=nonnegative, force_coefs_positive=force_coefs_positive,
+				scale_huber=scale_huber)
 
 		# output the blurred data:
 		self.output_maps(Xout, output_path, zscore_out=zscore_out)
-
-
 
 
 
