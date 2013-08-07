@@ -8,6 +8,7 @@ import math
 import itertools
 import pprint
 import scipy.signal as signal
+import subprocess
 
 import regreg.api as rr 
 from statsmodels.robust.norms import HuberT
@@ -159,6 +160,40 @@ class SharpBlur(object):
 		self.verbose = True
 
 
+	def load_smoothed_data(self, data_path, kernel=4, detrend=True, zscore_in=False):
+
+		subprocess.call(['3dmerge','-overwrite','-doall','-1blur_fwhm',str(kernel),'-prefix','temp_data_blur',data_path])
+		time.sleep(1.)
+		subprocess.call(['3dAFNItoNIFTI','temp_data_blur+tlrc.'])
+		time.sleep(1.)
+		temp_files = glob.glob('temp_data_blur+*')
+		for tf in temp_files:
+			try:
+				os.remove(tf)
+			except:
+				pass
+
+		ndata = nib.load('temp_data_blur.nii').get_data()
+		data = np.transpose(ndata, [3,2,1,0])
+
+		try:
+			os.remove('temp_data_blur.nii')
+		except:
+			pass
+
+		if detrend:
+			if self.verbose: print 'detrending blurred data...'
+			data = signal.detrend(data, axis=0)
+
+		if zscore_in:
+			if self.verbose: print 'z-scoring blurred data...'
+			zdata = (data-np.mean(data, axis=0)) / np.std(data, axis=0)
+			data = np.nan_to_num(zdata)
+
+		return data
+
+
+
 	def load_data_mask(self, data_path, mask_path, detrend=True, zscore_in=False):
 		'''
 		Function to load in mask and nifti data. Will detrend & z-score if desired.
@@ -274,7 +309,7 @@ class SharpBlur(object):
 		if self.verbose: print 'Solving final problem...'
 		nonzero_scale = final_loss.scale[np.absolute(final_loss.scale) > 1.e-6]
 		print np.median(nonzero_scale)
-		final_coefs = final_problem.solve(tol=5e-5, debug=True, start_step=step/np.median(nonzero_scale),
+		final_coefs = final_problem.solve(tol=1e-7, debug=True, start_step=step/np.median(nonzero_scale),
 			max_its=100, min_its=20) #5e-5
 
 		# Produce the output blurred data with the found coefficients.
@@ -308,6 +343,24 @@ class SharpBlur(object):
 		if self.verbose: print 'shape-justified data output shape:', full_data_out.shape
 
 		return full_data_out
+
+
+	def hybrid_blur(self, dataA, dataB, AtoB_ratio=0.5):
+
+		if self.verbose:
+			print 'hybrid blur of datasets...'
+
+		Aw = AtoB_ratio
+		Bw = 1. - Aw
+
+		dataA = np.array(dataA)
+		dataB = np.array(dataB)
+
+		assert dataA.shape == dataB.shape
+
+		data_out = dataA*Aw + dataB*Bw
+
+		return data_out
 
 
 
@@ -354,10 +407,14 @@ class SharpBlur(object):
 
 
 	def run(self, nifti_path, mask_path, output_path, iterations=1, detrend=True, zscore_in=False,
-		zscore_out=True, nonnegative=True, force_coefs_positive=False, scale_huber=True):
+		zscore_out=True, nonnegative=True, force_coefs_positive=False, scale_huber=True, hybrid_blur=True,
+		hybrid_ratio=0.5):
 
 		# load in the X data matrix and the mask, detrend and zscore if desired:
 		X = self.load_data_mask(nifti_path, mask_path, detrend=detrend, zscore_in=zscore_in)
+
+		if hybrid_blur:
+			gauss_data = self.load_smoothed_data(nifti_path, detrend=detrend, zscore_in=zscore_in)
 
 		Xorig = X.copy()
 		Xout = X.copy()
@@ -369,6 +426,9 @@ class SharpBlur(object):
 		for level in range(iterations):
 			Xout = self.blur(Xout, Y=Xorig, nonnegative=nonnegative, force_coefs_positive=force_coefs_positive,
 				scale_huber=scale_huber)
+
+		if hybrid_blur:
+			Xout = self.hybrid_blur(Xout, gauss_data, AtoB_ratio=hybrid_ratio)
 
 		# output the blurred data:
 		self.output_maps(Xout, output_path, zscore_out=zscore_out)

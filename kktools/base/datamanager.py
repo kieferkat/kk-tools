@@ -190,8 +190,11 @@ class DataManager(Process):
                 
                 for trial, response in zip(trials, responses):
                     #print response, len(trial)
-                    subclass_dict[int(response)] += 1
-                    subclass_trials[int(response)].append(trial)
+                    if int(response) in classes:
+                        subclass_dict[int(response)] += 1
+                        subclass_trials[int(response)].append(trial)
+                    else:
+                        print response, 'not in classes:', classes
                         
                 if min(subclass_dict.values()) == 0:
                     del self.subject_indices[subject]
