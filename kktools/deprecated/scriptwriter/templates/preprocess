@@ -1,0 +1,158 @@
+#! /bin/csh
+
+######~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+####
+##      Preprocessing script auto-written by Scriptwriter
+##      ?{DATE}
+##
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+
+
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+#      Preprocess loop over subjects:
+##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+
+foreach subject ( ?{SUBJECTS} )
+
+    cd ../${subject}*
+
+    !{BEGIN:CONVERT_ANATOMICAL}
+	##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Copy Anatomical:
+    ##
+
+	if ( -e ?{ANATOMICAL_NAME}+orig.HEAD ) then
+        rm -rf ?{ANATOMICAL_NAME}+orig*
+	endif
+
+	3dcopy ?{ANATOMICAL_NIFTI} ?{ANATOMICAL_NAME}
+    !{END}
+
+    
+    !{BEGIN:CUTOFF_BUFFER}
+    ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Cut off buffer leadin/leadout:
+    ##
+
+	if ( -e epi1+orig.HEAD ) then
+        rm -rf epi?+orig*
+	endif
+    
+    3dTcat -prefix epi?{EPI_NUM} '?{EPI_NIFTI}[?{LEAD_IN}..?{LEAD_OUT}]'!REP:LINE{EPI_NUM,EPI_NIFTI}
+	!{END}
+
+    
+    !{BEGIN:REFIT}
+	##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Refit dataset to ensure correct TR length
+    ##
+	
+    3drefit -TR ?{TR_LENGTH} epi?{EPI_NUM}+orig!REP:LINE{EPI_NUM}
+    !{END}
+
+
+    !{BEGIN:TSHIFT}
+    ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Slice time correction:
+    ##
+	if ( -e epits1+orig.HEAD ) then
+        rm -rf epits?+orig*
+	endif
+	
+	3dTshift -slice ?{SLICE_NUM} -tpattern ?{TPATTERN} -prefix epits?{EPI_NUM} epi?{EPI_NUM}+orig.!REP:LINE{EPI_NUM}
+
+    rm -rf epi?+orig*
+    !{END}
+
+
+    !{BEGIN:CONCATENATE}
+	##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Concatenate raw into afni dataset:
+    ##
+	if ( -e ?{CURRENT_FUNCTIONAL}+orig.HEAD ) then
+        rm -rf ?{CURRENT_FUNCTIONAL}+orig*
+	endif
+
+	3dTcat -prefix ?{CURRENT_FUNCTIONAL} !REP:INPLACE{epits?{EPI_NUM}+orig} 
+
+	rm -rf epits?+orig*
+    !{END}
+
+
+    !{BEGIN:VOLREG}
+	##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Correct for motion:
+    ##
+
+	if ( -e ?{CURRENT_FUNCTIONAL}+orig.HEAD ) then
+        rm -rf ?{CURRENT_FUNCTIONAL}+orig*
+	endif
+
+	if ( -e ?{MOTIONFILE_NAME} ) then
+        rm -rf ?{MOTIONFILE_NAME}
+	endif
+
+	3dvolreg -Fourier -twopass -prefix ?{CURRENT_FUNCTIONAL} -base ?{VOLREG_BASE} -dfile ?{MOTIONFILE_NAME} ?{PRIOR_FUNCTIONAL}+orig
+    !{END}
+
+
+    !{BEGIN:SMOOTH}
+	##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Smooth dataset:
+    ##
+
+	if ( -e ?{CURRENT_FUNCTIONAL}+orig.HEAD ) then
+        rm -rf ?{CURRENT_FUNCTIONAL}+orig*
+	endif
+
+	3dmerge -prefix ?{CURRENT_FUNCTIONAL} -1blur_fwhm ?{BLUR_KERNEL} -doall ?{PRIOR_FUNCTIONAL}+orig
+    !{END}
+
+    
+    !{BEGIN:NORMALIZE}
+	##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Normalize dataset:
+    ##
+
+	if ( -e ?{CURRENT_FUNCTIONAL}+orig.BRIK ) then
+        rm -rf ?{CURRENT_FUNCTIONAL}+orig.*
+	endif
+
+	if ( -e ?{FUNCTIONAL_NAME}?{AVE_SUFFIX}+orig.BRIK ) then 
+        rm -rf ?{FUNCTIONAL_NAME}?{AVE_SUFFIX}+orig*
+	endif
+
+
+	3dTstat -prefix ?{FUNCTIONAL_NAME}?{AVE_SUFFIX} '?{PRIOR_FUNCTIONAL}+orig[0..?{PRIOR_TRRANGE}]'
+	3drefit -abuc ?{FUNCTIONAL_NAME}?{AVE_SUFFIX}+orig
+	3dcalc -datum float -a '?{PRIOR_FUNCTIONAL}+orig[0..?{PRIOR_TRRANGE}]' -b ?{FUNCTIONAL_NAME}?{AVE_SUFFIX}+orig -expr "?{NORMALIZE_EXPRESSION}" -prefix ?{CURRENT_FUNCTIONAL}
+    !{END}
+
+
+    !{BEGIN:HIGHPASS_FILTER}
+    ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Highpass filter dataset:
+    ##
+
+	if (-e ?{CURRENT_FUNCTIONAL}+orig.HEAD ) then
+        rm -rf ?{CURRENT_FUNCTIONAL}+orig.*
+	endif
+
+	3dFourier -prefix ?{CURRENT_FUNCTIONAL} -highpass ?{HIGHPASS_VALUE} ?{PRIOR_FUNCTIONAL}+orig
+    !{END}
+
+    
+    !{BEGIN:TALAIRACH_WARP}
+	##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~##
+    ##      Warp anatomical & functional to talairach space:
+    ##
+    
+	@auto_tlrc -warp_orig_vol -suffix NONE -base '?{TT_N27_PATH}' -input ?{ANATOMICAL_NAME}+orig.
+
+	3drefit -apar ?{ANATOMICAL_NAME}+orig ?{CURRENT_FUNCTIONAL}+orig
+    !{END}
+
+end
+
+
+

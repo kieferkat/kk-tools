@@ -13,6 +13,7 @@ from ..base.nifti import NiftiTools
 from normalize import simple_normalize
 from threshold import threshold_by_pvalue, threshold_by_rawrange
 from sklearn.ensemble import GradientBoostingRegressor, AdaBoostClassifier, ExtraTreesClassifier
+from sklearn.lda import LDA 
 
 
 
@@ -158,7 +159,7 @@ class SVMRFE(CVObject):
         
     
     def fit_linearsvc(self, Xnormed, Y, class_weight='auto',penalty='l2'):
-        print 'fitting linearsvm for coefficients'
+        print '\nfitting linearsvm for coefficients'
         print 'regularization: ', self.C
         dual = True
         if penalty == 'l1':
@@ -169,7 +170,7 @@ class SVMRFE(CVObject):
 
 
     def fit_SGD(self, Xnormed, Y, alpha=0.001, l1_ratio=0.5, loss='modified_huber', penalty='elasticnet'):
-        print 'fitting SGD Classifier...'
+        print '\nfitting SGD Classifier...'
         clf = SGDClassifier(loss=loss, alpha=alpha, l1_ratio=l1_ratio, penalty=penalty, fit_intercept=False,
             verbose=0, class_weight='auto', n_iter=50)
         clf.fit(Xnormed, Y)
@@ -177,20 +178,19 @@ class SVMRFE(CVObject):
 
 
     def fit_pls(self, Xnormed, Y):
-        print 'fitting pls...'
+        print '\nfitting pls...'
         clf = PLSRegression(n_components=self.pls_components, scale=False)
         clf.fit(Xnormed, Y)
         return clf.coefs
 
 
     def fit_logreg(self, Xnormed, Y, class_weight='auto', penalty='l2', fit_intercept=False):
-        print 'fitting logistic regression...'
+        print '\nfitting logistic regression...'
         print 'regularization: ', self.C
         clf = LogisticRegression(penalty=penalty, class_weight=class_weight, C=self.C,
             fit_intercept=fit_intercept)
         clf.fit(Xnormed, Y)
         return clf.coef_[0]
-
 
 
     def fit_linearsvc_bootstrap(self, Xnormed, Y, class_weight='auto', use_median=False):
