@@ -282,6 +282,8 @@ class GraphnetInterface(CVObject):
         print 'Solving the problem...'
         
         coefficients, residuals = l.fit(tol=tol, initial=initial)
+
+        pprint(coefficients)
         
         self.coefficients = coefficients
         self.residuals = residuals

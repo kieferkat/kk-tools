@@ -309,7 +309,7 @@ class SharpBlur(object):
 		if self.verbose: print 'Solving final problem...'
 		nonzero_scale = final_loss.scale[np.absolute(final_loss.scale) > 1.e-6]
 		print np.median(nonzero_scale)
-		final_coefs = final_problem.solve(tol=1e-7, debug=True, start_step=step/np.median(nonzero_scale),
+		final_coefs = final_problem.solve(tol=1e-5, debug=True, start_step=step/np.median(nonzero_scale),
 			max_its=100, min_its=20) #5e-5
 
 		# Produce the output blurred data with the found coefficients.

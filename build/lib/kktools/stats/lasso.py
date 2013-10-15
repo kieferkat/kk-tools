@@ -1,6 +1,6 @@
 
 import numpy as np
-from sklearn.linear_model import ElasticNet, ElasticNetCV
+from sklearn.linear_model import Lasso, LassoCV
 import random
 import itertools
 import nibabel as nib
@@ -15,15 +15,13 @@ from threshold import threshold_by_pvalue, threshold_by_rawrange
 
 
 
-class ElasticNetClassifier(CVObject):
+class LassoClassifier(CVObject):
     
     def __init__(self, data_obj=None, variable_dict=None, folds=None):
-        super(ElasticNetClassifier, self).__init__(variable_dict=variable_dict, data_obj=data_obj)
+        super(LassoClassifier, self).__init__(variable_dict=variable_dict, data_obj=data_obj)
         self.set_folds(folds)
         self.nifti = NiftiTools()
-        self.alpha = 1.0
-        self.l1ratio = 0.5
-        
+        self.alpha = 1.0        
         self.X = getattr(self.data, 'X', None)
         self.Y = getattr(self.data, 'Y', None)
         #if self.Y:
@@ -31,29 +29,26 @@ class ElasticNetClassifier(CVObject):
         self.subject_indices = getattr(self.data, 'subject_indices', None)
         
     
-    def determine_alpha_ratio(self, X, Y):
-        print 'determining alpha and l1_ratio with crossvalidation...'
+    def determine_alpha(self, X, Y):
+        print 'determining alpha with crossvalidation...'
         Xnorm = simple_normalize(X)
-        clf = ElasticNetCV(l1_ratio=[.01,.1], fit_intercept=False, verbose=True)
-        #clf = ElasticNetCV(l1_ratio=[.1,.5,.9], fit_intercept=False, verbose=True)
+        clf = LassoCV(fit_intercept=False, verbose=True)
         clf.fit(Xnorm, Y)
         alpha = clf.alpha_ 
-        l1ratio = clf.l1_ratio_
         self.alpha = alpha
-        self.l1ratio = l1ratio
-        return alpha, l1ratio
+        return alpha
 
 
-    def fit_elasticnet(self, X, Y):
-        print 'fitting Elastic Net...'
-        print 'alpha:', self.alpha, 'l1ratio:', self.l1ratio
+    def fit_lasso(self, X, Y):
+        print 'fitting Lasso...'
+        print 'alpha:', self.alpha
         Xnorm = simple_normalize(X)
-        clf = ElasticNet(alpha=self.alpha, l1_ratio=self.l1ratio, fit_intercept=False)
+        clf = Lasso(alpha=self.alpha, fit_intercept=False)
         clf.fit(Xnorm, Y)
         return clf
     
     
-    def test_enet(self, X, Y, clf):
+    def test_lasso(self, X, Y, clf):
 
         X = simple_normalize(X)
         correct = []
@@ -61,18 +56,22 @@ class ElasticNetClassifier(CVObject):
         
         for trial, outcome in zip(X, Y):
             prediction = clf.predict(trial)
-            print prediction, outcome
+            if prediction <= 0:
+                pred = -1
+            elif prediction > 0:
+                pred = 1
+            #print prediction, outcome
             #print 'prediction, real:', prediction, outcome, np.sum(clf.coef_), np.sum(trial)
-            correct.append((prediction == outcome))
+            correct.append((pred == outcome))
             
         accuracy = float(sum(correct))/float(len(correct))
         print 'Test group accuracy: ', accuracy
         return accuracy
     
     
-    def train_enet(self, X, Y):
+    def train_lasso(self, X, Y):
         print 'Training next group...'
-        clf = self.fit_elasticnet(X, Y)
+        clf = self.fit_lasso(X, Y)
         return clf
     
     
@@ -87,7 +86,7 @@ class ElasticNetClassifier(CVObject):
     def crossvalidate(self, folds=None, logfile=None, ttest_mean=0.5):
 
         self.setup_crossvalidation(folds=folds)
-        trainresults, testresults = self.traintest_crossvalidator(self.train_enet, self.test_enet,
+        trainresults, testresults = self.traintest_crossvalidator(self.train_lasso, self.test_lasso,
                                                                   self.trainX, self.trainY,
                                                                   self.testX, self.testY)
         
@@ -121,8 +120,7 @@ class ElasticNetClassifier(CVObject):
         
         
         
-    def output_maps(self, X, Y, time_points, nifti_filepath, threshold=0.01,
-                    two_tail=True, verbose=True):
+    def output_maps(self, X, Y, time_points, nifti_filepath, verbose=True):
         
         if not nifti_filepath.endswith('.nii'):
             nifti_filepath = nifti_filepath+'.nii'
@@ -130,15 +128,15 @@ class ElasticNetClassifier(CVObject):
         if verbose:
             print 'fitting to output...'
             
-        clf = self.fit_linearsvc(X, Y)
+        clf = self.fit_lasso(X, Y)
         self.coefs = clf.coef_[0]
         
-        thresholded_coefs = threshold_by_pvalue(self.coefs, threshold, two_tail=two_tail)
+        #thresholded_coefs = threshold_by_pvalue(self.coefs, threshold, two_tail=two_tail)
         
         if verbose:
             print 'reshaping the coefs to original brain shape...'
             
-        unmasked = self.data.unmask_Xcoefs(thresholded_coefs, time_points, verbose=verbose)
+        unmasked = self.data.unmask_Xcoefs(self.coefs, time_points, verbose=verbose)
         
         if verbose:
             print 'saving nifti to filename:', nifti_filepath

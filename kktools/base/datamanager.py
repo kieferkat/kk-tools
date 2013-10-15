@@ -472,8 +472,8 @@ class DataManager(Process):
             print 'merge X and merge Y have different lengths ?!'
             return False
         
-        self.X.tolist()
-        self.Y.tolist()
+        self.X = self.X.tolist()
+        self.Y = self.Y.tolist()
         
         self.X.extend(oX.tolist())
         self.Y.extend(oY.tolist())
