@@ -141,8 +141,11 @@ class DataManager(Process):
                         class_trials[int(c)] = []
                     
                     for trial, response in zip(trials, responses):
-                        class_dict[int(response)] += 1
-                        class_trials[int(response)].append(trial)
+                        if int(response) in classes:
+                            class_dict[int(response)] += 1
+                            class_trials[int(response)].append(trial)
+                        else:
+                            print response, 'not in classes:', classes
 
                     delete_sub = False
                     for c, v in class_dict.items():

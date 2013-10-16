@@ -6,8 +6,7 @@ setup(name='kktools', author='Kiefer Katovich', packages=['kktools', 'kktools.ba
                                                           'kktools.afni','kktools.utilities',
                                                           'kktools.stats','kktools.data',
                                                           'kktools.timecourse',
-                                                          'kktools.scriptwriter',
+                                                          'kktools.scriptwriters',
                                                           'kktools.templates',
-                                                          'kktools.defaults',
                                                           'kktools.funcalign',
                                                           'kktools.sharpblur'])
